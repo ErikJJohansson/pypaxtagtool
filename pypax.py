@@ -258,20 +258,19 @@ def write_aoi_tags_to_plc(plc,workbook,aoi_name):
 if __name__ == "__main__":
 
     # open connection to PLC
+    if len(argv) > 1:
+        mode = argv[1]
+        excelfile = argv[2]
+        commpath = str(argv[3])
 
-    #excelfile = argv[1]
-    #commpath = argv[2]
-    #mode = argv[3]
+    #commpath = '10.10.16.20/5'
+    #excelfile = 'ProcessLibraryOnlineConfigTool.xlsm'
+    #mode = 'r'
+    #plc_name = 'CVM'
 
-    # default to read mode
-    #if len(argv[3] == 0):
-    #    mode = 0
-
-
-    commpath = '10.10.16.20/5'
-    excelfile = 'TEST.xlsm' #'ProcessLibraryOnlineConfigTool.xlsm'
-    outfile = 'TEST.xlsm'
-    mode = 1
+    print("Mode : " + mode)
+    print("File: " + excelfile)
+    print("Commpath: " + commpath)
 
     # open connection to PLC
 
@@ -280,9 +279,12 @@ if __name__ == "__main__":
     print('Connecting to PLC.')
     try:
         plc.open()
-        print('Connected to ' + plc.get_plc_name() + ' PLC.')
+        plc_name = plc.get_plc_name()
+
+        print('Connected to ' + plc_name + ' PLC.')
     except:
         print('Unable to connect to PLC at ' + commpath)
+        sys.exit()
 
     # open excel file
 
@@ -293,6 +295,7 @@ if __name__ == "__main__":
     except:
         print('Unable to open excel file ' + excelfile)
         plc.close()
+        sys.exit()
     
     print('Opened file named ' + excelfile)
 
@@ -302,23 +305,27 @@ if __name__ == "__main__":
     setup_sheet = book["Setup"]
 
     # read from PLC
-    if mode == 0:
+    if mode == '-r':
 
         for aoi in aoi_sheet_names:
             read_aoi_tags_from_plc(plc,book,aoi)
-            #print(aoi + ': ' + str(get_aoi_setup(setup_sheet,aoi)))
-            #print(aoi + ': ' + str(search_value_in_col(setup_sheet,aoi,8)))
+
+        parsed_filename = excelfile.split('.')
+
+        # add plc name to file and save
+        outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + parsed_filename[len(parsed_filename)-1]
+
+        print('Saving to file ' + outfile)
+        book.save(outfile)
+        print('file saved to ' + outfile)
 
     # write to PLC
-    elif mode == 1:
+    elif mode == '-w':
 
         for aoi in aoi_sheet_names:
             write_aoi_tags_to_plc(plc,book,aoi)
-            #print(aoi + str(get_aoi_setup(setup_sheet,aoi)))
 
-    print('Saving file')
-    book.save(outfile)
-    print('file saved to ' + outfile)
+        print("Finished writing to " + plc_name)
 
     plc.close()
     book.close()
