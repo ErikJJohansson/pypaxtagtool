@@ -1,6 +1,7 @@
 from pycomm3 import LogixDriver
 from sys import argv
 import openpyxl
+from tqdm import trange, tqdm
 
 '''
 
@@ -79,6 +80,12 @@ def get_subtag(sheet, column):
 
     return sub_tag
 
+def search_value_in_col(sheet, search_string, col_idx=1):
+    for row in range(1, sheet.max_row + 1):
+        if sheet[row][col_idx].value == search_string:
+            return row
+    return None
+
 def get_dim_list(base_tag, dim_list):
     '''
     function takes a list which has the array size and turns it into a single dimension list with all the indexes
@@ -89,7 +96,7 @@ def get_dim_list(base_tag, dim_list):
     temp = []
 
     # this can totally be better, my brain just started hurting
-    # idea is to get a single dimension list fo strings with all the indexes so that can be concatenated with base tag
+    # idea is to get a single dimension list of strings with all the indexes so that can be concatenated with base tag
 
     if len(filtered_list) == 1: # one dimension
         for i in range(dim_list[0]):
@@ -98,7 +105,7 @@ def get_dim_list(base_tag, dim_list):
         for i in range(dim_list[0]):
             for j in range(dim_list[1]):
                 temp.append(base_tag + '[' + str(i) + '][' + str(j) + ']')
-    elif len(filtered_list) == 3: # two dimension
+    elif len(filtered_list) == 3: # three dimension
         for i in range(dim_list[0]):
             for j in range(dim_list[1]):
                 for k in range(dim_list[2]):
@@ -106,7 +113,7 @@ def get_dim_list(base_tag, dim_list):
 
     return temp
 
-def read_tags_from_plc(plc,workbook,aoi_name):
+def read_aoi_tags_from_plc(plc,workbook,aoi_name):
     '''
     function will read the tag values for a given AOI
     '''
@@ -120,27 +127,36 @@ def read_tags_from_plc(plc,workbook,aoi_name):
     
     aoi_tag_list = get_aoi_tags(plc,aoi_name)       
     aoi_sheet = workbook[aoi_name]
+    setup_sheet = workbook['Setup']
+
     # for each tag
 
-    for i in range(len(aoi_tag_list)):
-        #hardcoded offsets
-        # write the tag name in column c
-        aoi_sheet.cell(START_ROW+i,NAME_COL).value = aoi_tag_list[i]
-        
-        # loop through colums to read individual tags, tag name is retrieved from column in spreadsheet
-        j = START_COL
+    num_aoi_tags = len(aoi_tag_list)
 
-        sub_tag =str(aoi_sheet.cell(TOP_TAG_ROW,j).value) + str(aoi_sheet.cell(BOTTOM_TAG_ROW,j).value)
-        # this means we have data in the cell
-        # cells return None when no value, we are concatenating the value of two cells, not the best but it works
-        while sub_tag != 'NoneNone':
-            aoi_sheet.cell(START_ROW+i,j).value = get_tag_value(plc,aoi_tag_list[i],sub_tag)
+    if num_aoi_tags > 0:
+
+        for i in tqdm(range(num_aoi_tags),"Reading instances of " + aoi):
+            #hardcoded offsets
+            # write the tag name in column c
+            aoi_sheet.cell(START_ROW+i,NAME_COL).value = aoi_tag_list[i]
             
-            #update iterator
-            j+=1
-            sub_tag =str(aoi_sheet.cell(TOP_TAG_ROW,j).value) + str(aoi_sheet.cell(BOTTOM_TAG_ROW,j).value)
+            # loop through colums to read individual tags, tag name is retrieved from column in spreadsheet
+            j = START_COL
 
-def write_tags_to_plc(plc,workbook,aoi_name):
+            sub_tag = get_subtag(aoi_sheet,j)
+
+            # this means we have data in the cell
+            # cells return None when no value, we are concatenating the value of two cells, not the best but it works
+            while sub_tag != 'NoneNone':
+                aoi_sheet.cell(START_ROW+i,j).value = get_tag_value(plc,aoi_tag_list[i],sub_tag)
+                
+                #update iterator
+                j+=1
+                sub_tag = get_subtag(aoi_sheet,j)
+    else:
+        print("No instances of " + aoi)
+
+def write_aoi_tags_to_plc(plc,workbook,aoi_name):
     '''
     write to PLC!
     '''
@@ -156,13 +172,16 @@ def write_tags_to_plc(plc,workbook,aoi_name):
     i = START_ROW
     base_tag = str(aoi_sheet.cell(i,NAME_COL).value)
 
+    print("Writing instances of " + aoi)
+
     # loop through rows
     while base_tag != 'None':
 
         # loop through colums to write individual tags, tag name is retrieved from column in spreadsheet
         j = START_COL
 
-        sub_tag = str(aoi_sheet.cell(TOP_TAG_ROW,j).value) + str(aoi_sheet.cell(BOTTOM_TAG_ROW,j).value)
+        #sub_tag = str(aoi_sheet.cell(TOP_TAG_ROW,j).value) + str(aoi_sheet.cell(BOTTOM_TAG_ROW,j).value)
+        sub_tag = get_subtag(aoi_sheet,j)
 
         while sub_tag != "NoneNone":
 
@@ -172,7 +191,8 @@ def write_tags_to_plc(plc,workbook,aoi_name):
 
             #update iterator
             j += 1
-            sub_tag = str(aoi_sheet.cell(TOP_TAG_ROW,j).value) + str(aoi_sheet.cell(BOTTOM_TAG_ROW,j).value)
+            #sub_tag = str(aoi_sheet.cell(TOP_TAG_ROW,j).value) + str(aoi_sheet.cell(BOTTOM_TAG_ROW,j).value)
+            sub_tag = get_subtag(aoi_sheet,j)
 
 
         # update iterator
@@ -220,7 +240,7 @@ if __name__ == "__main__":
     #    mode = 0
 
 
-    commpath = '10.10.16.20/0'
+    commpath = '10.10.16.20/5'
     excelfile = 'ProcessLibraryOnlineConfigTool.xlsm'
     outfile = 'TEST.xlsm'
     mode = 0
@@ -254,15 +274,16 @@ if __name__ == "__main__":
     if mode == 0:
 
         for aoi in aoi_sheet_names:
-            print("Reading instances of " + aoi)
-            read_tags_from_plc(plc,book,aoi)
+            read_aoi_tags_from_plc(plc,book,aoi)
+            #print(aoi + ': ' + str(search_value_in_col(book['Setup'],aoi,2)[1]))
+            #print(aoi + ' : ' + str(book['Setup'].max_row))
 
     # write to PLC
     elif mode == 1:
 
         for aoi in aoi_sheet_names:
-            print("Writing instances of " + aoi)
-            #write_tags_to_plc(plc,book,aoi)
+            write_aoi_tags_to_plc(plc,book,aoi)
+            #pass
 
     print('Saving file')
     book.save(outfile)
