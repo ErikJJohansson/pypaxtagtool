@@ -1,0 +1,3 @@
+pycomm3
+openpyxl
+tqdm
