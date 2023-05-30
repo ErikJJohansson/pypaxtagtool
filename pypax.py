@@ -268,9 +268,9 @@ if __name__ == "__main__":
     #mode = 'r'
     #plc_name = 'CVM'
 
-    print("Mode : " + mode)
-    print("File: " + excelfile)
-    print("Commpath: " + commpath)
+    #print("Mode : " + mode)
+    #print("File: " + excelfile)
+    #print("Commpath: " + commpath)
 
     # open connection to PLC
 
@@ -281,10 +281,10 @@ if __name__ == "__main__":
         plc.open()
         plc_name = plc.get_plc_name()
 
-        print('Connected to ' + plc_name + ' PLC.')
+        print('Connected to ' + plc_name + ' PLC at ' + commpath)
     except:
         print('Unable to connect to PLC at ' + commpath)
-        sys.exit()
+        exit()
 
     # open excel file
 
@@ -295,7 +295,7 @@ if __name__ == "__main__":
     except:
         print('Unable to open excel file ' + excelfile)
         plc.close()
-        sys.exit()
+        exit()
     
     print('Opened file named ' + excelfile)
 
@@ -306,7 +306,7 @@ if __name__ == "__main__":
 
     # read from PLC
     if mode == '-r':
-
+        print('Reading tags from ' + plc_name + ' PLC.')
         for aoi in aoi_sheet_names:
             read_aoi_tags_from_plc(plc,book,aoi)
 
@@ -315,17 +315,18 @@ if __name__ == "__main__":
         # add plc name to file and save
         outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + parsed_filename[len(parsed_filename)-1]
 
+        print('Finished reading from ' + plc_name + ' PLC.')
         print('Saving to file ' + outfile)
         book.save(outfile)
         print('file saved to ' + outfile)
 
     # write to PLC
     elif mode == '-w':
-
+        print('Writing tags to ' + plc_name + ' PLC.')
         for aoi in aoi_sheet_names:
             write_aoi_tags_to_plc(plc,book,aoi)
 
-        print("Finished writing to " + plc_name)
+        print("Finished writing to " + plc_name + " PLC.")
 
     plc.close()
     book.close()
