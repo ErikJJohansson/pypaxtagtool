@@ -39,6 +39,46 @@ def get_aoi_list(excel_book):
 
     return aoi_list
 
+def get_subtag_list(sheet):
+    '''
+    function gets all subtags in a given sheet, returns a list of subtags
+    '''
+    # These are constants based on the PlantPAX spreadsheets
+    START_ROW = 10
+    START_COL = 5
+    NAME_COL = 3
+    TOP_TAG_ROW = 7
+    BOTTOM_TAG_ROW = 8     
+    
+    sub_tag_list = [] 
+    i = START_COL
+    sub_tag = get_subtag(sheet,i)
+
+    while sub_tag != 'NoneNone':            
+        
+        sub_tag_list.append(sub_tag)
+        
+        #update iterator
+        i+=1
+        sub_tag = get_subtag(sheet,i)
+
+    return sub_tag_list
+
+def get_subtag(sheet, column):
+    '''
+    function gets subtag based on column
+    '''
+    # These are constants based on the PlantPAX spreadsheets
+    START_ROW = 10
+    START_COL = 5
+    NAME_COL = 3
+    TOP_TAG_ROW = 7
+    BOTTOM_TAG_ROW = 8 
+
+    sub_tag = str(sheet.cell(TOP_TAG_ROW,column).value) + str(sheet.cell(BOTTOM_TAG_ROW,column).value)
+
+    return sub_tag
+
 def get_dim_list(base_tag, dim_list):
     '''
     function takes a list which has the array size and turns it into a single dimension list with all the indexes
