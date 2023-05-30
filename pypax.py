@@ -290,7 +290,7 @@ if __name__ == "__main__":
 
     print('Opening ' + excelfile)
     try:
-        book = openpyxl.load_workbook(excelfile,keep_vba=True)
+        book = openpyxl.load_workbook(excelfile,keep_vba=False,keep_links=True)
 
     except:
         print('Unable to open excel file ' + excelfile)
@@ -313,7 +313,7 @@ if __name__ == "__main__":
         parsed_filename = excelfile.split('.')
 
         # add plc name to file and save
-        outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + parsed_filename[len(parsed_filename)-1]
+        outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + 'xlsx' #parsed_filename[len(parsed_filename)-1]
 
         print('Finished reading from ' + plc_name + ' PLC.')
         print('Saving to file ' + outfile)
