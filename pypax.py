@@ -10,6 +10,18 @@ from tqdm import trange, tqdm
     argv 3 Check for -r or -w for read/write
 
 '''
+# These are constants based on the PlantPAX spreadsheets containing AOI data
+START_ROW = 10
+START_COL = 5
+NAME_COL = 3
+TOP_TAG_ROW = 7
+BOTTOM_TAG_ROW = 8
+
+# These are constants based on the PlantPAX setup sheet at the beginning of the workbook
+
+NUM_INSTANCES_COL = 4 # in setup sheet
+NUM_SUBTAGS_COL = 5  # in setup sheet
+
 
 # check for -r for read or -w for write
 
@@ -43,13 +55,7 @@ def get_aoi_list(excel_book):
 def get_subtag_list(sheet):
     '''
     function gets all subtags in a given sheet, returns a list of subtags
-    '''
-    # These are constants based on the PlantPAX spreadsheets
-    START_ROW = 10
-    START_COL = 5
-    NAME_COL = 3
-    TOP_TAG_ROW = 7
-    BOTTOM_TAG_ROW = 8     
+    '''   
     
     sub_tag_list = [] 
     i = START_COL
@@ -69,12 +75,6 @@ def get_subtag(sheet, column):
     '''
     function gets subtag based on column
     '''
-    # These are constants based on the PlantPAX spreadsheets
-    START_ROW = 10
-    START_COL = 5
-    NAME_COL = 3
-    TOP_TAG_ROW = 7
-    BOTTOM_TAG_ROW = 8 
 
     sub_tag = str(sheet.cell(TOP_TAG_ROW,column).value) + str(sheet.cell(BOTTOM_TAG_ROW,column).value)
 
@@ -95,8 +95,8 @@ def get_aoi_setup(sheet, aoi_name):
     # 8 is col H "Worksheet tab name"
     aoi_row = search_value_in_col(sheet, aoi_name, 8)
 
-    num_aoi_tags = sheet.cell(aoi_row,4).value
-    num_sub_tags = sheet.cell(aoi_row,5).value
+    num_aoi_tags = sheet.cell(aoi_row,NUM_INSTANCES_COL).value
+    num_sub_tags = sheet.cell(aoi_row,NUM_SUBTAGS_COL).value
 
     if aoi_row != None:
         return num_aoi_tags, num_sub_tags
@@ -173,13 +173,6 @@ def read_aoi_tags_from_plc(plc,workbook,aoi_name):
     function will read the tag values for a given AOI
     '''
     
-    # These are constants based on the PlantPAX spreadsheets
-    START_ROW = 10
-    START_COL = 5
-    NAME_COL = 3
-    TOP_TAG_ROW = 7
-    BOTTOM_TAG_ROW = 8   
-    
     aoi_tag_list = get_aoi_tags(plc,aoi_name)       
     aoi_sheet = workbook[aoi_name]
     setup_sheet = workbook['Setup']
@@ -217,13 +210,7 @@ def read_aoi_tags_from_plc(plc,workbook,aoi_name):
 def write_aoi_tags_to_plc(plc,workbook,aoi_name):
     '''
     write to PLC!
-    '''
-    # These are constants based on the PlantPAX spreadsheets
-    START_ROW = 10
-    START_COL = 5
-    NAME_COL = 3
-    TOP_TAG_ROW = 7
-    BOTTOM_TAG_ROW = 8   
+    ''' 
 
     aoi_sheet = workbook[aoi_name]
     setup_sheet = workbook['Setup']
