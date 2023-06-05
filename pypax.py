@@ -158,7 +158,25 @@ def read_plc_row(plc, tag_list):
         tag_data = plc.read(*tag_list)
 
     # tuple of tag name, data
-    return [(s[0],s[1]) for s in tag_data]
+    tag_data_formatted = []
+
+    # hardcoded but it works
+    for s in tag_data:
+        if s[2] == 'BOOL':
+            data = int(s[1])
+        elif s[2] == 'REAL':
+            if 'e' in str(s[1]):
+                data = float(format(s[1],'.6e'))
+            elif s[1].is_integer():
+                data = int(s[1])
+            else:
+                data = float(format(s[1], '.6f'))                  
+        else:
+            data = s[1]
+
+        tag_data_formatted.append((s[0],data))
+
+    return tag_data_formatted
 
 def write_plc_row(plc, tag_data):
     if plc.connected:
@@ -173,15 +191,8 @@ def write_sheet_row(sheet,row,base_tag,tag_data):
 
     # write data    
     for i in range(len(tag_data)):
-        # change booleans to 0 and 1 in spreadsheet
-        # this could probably be cleaner
-        # index 1 is data in Tuple
-        if tag_data[i][1] == True:
-            sheet.cell(row,START_COL+i).value = 1
-        elif tag_data[i][1] == False:
-            sheet.cell(row,START_COL+i).value = 0
-        else:
-            sheet.cell(row,START_COL+i).value = tag_data[i][1]
+            
+        sheet.cell(row,START_COL+i).value = tag_data[i][1]
 
 def read_sheet_row(sheet,row,sub_tags):
     '''
@@ -193,7 +204,13 @@ def read_sheet_row(sheet,row,sub_tags):
 
     # loop through subtags, get data
     for i in range(len(sub_tags)):
-        tag_data.append((base_tag + sub_tags[i],sheet.cell(row,START_COL+i).value))
+
+        if sheet.cell(row,START_COL+i).value == None:
+            cell_value = (base_tag + sub_tags[i],'')
+        else:
+            cell_value = (base_tag + sub_tags[i],sheet.cell(row,START_COL+i).value)
+
+        tag_data.append(cell_value)
 
     return tag_data
 
@@ -244,6 +261,7 @@ if __name__ == "__main__":
     # get list of AOI sheet names
     aoi_sheet_names = get_aoi_list(book)
 
+    # should be the first sheet in the workbook
     setup_sheet = book["Setup"]
 
     # read from PLC
@@ -276,9 +294,8 @@ if __name__ == "__main__":
 
         parsed_filename = excelfile.split('.')
 
-        # add plc name to file and save
+        # add plc name to file and save to new file
         outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + 'xlsx' #parsed_filename[len(parsed_filename)-1]
-
         print('Finished reading from ' + plc_name + ' PLC.')
         print('Saving to file ' + outfile)
         book.save(outfile)
@@ -290,25 +307,55 @@ if __name__ == "__main__":
         
         for aoi in aoi_sheet_names:
 
-            # get aoi info
-            num_instances, num_sub_tags = get_aoi_setup(setup_sheet,aoi)
+            # get aoi info from sheet and plc
+            num_instances_in_sheet, num_sub_tags = get_aoi_setup(setup_sheet,aoi)
+            base_tags = get_aoi_tag_instances(plc,aoi)
+            num_instances_in_plc = len(base_tags)
 
-            if num_instances > 0:
+            # we will skip writing AOI data if there is a mismatch in the amount of instances to compare
+            # this kind of forces the user to read from the PLC to refresh the file
+            if num_instances_in_sheet > 0 and (num_instances_in_sheet == num_instances_in_plc):
 
                 # get subtags
                 sub_tags = get_subtag_list(book[aoi])
 
+                tag_data_differences = []       
+
                 # read spreadsheet rows, write to plc
-                for i in tqdm(range(num_instances),"Writing instances of " + aoi):
+                for i in tqdm(range(num_instances_in_sheet),"Comparing instances of " + aoi):
+
+                    # data for one tag and all sub tags from plc
+                    tag_list = make_tag_list(base_tags[i],sub_tags)
+                    tag_data_plc = read_plc_row(plc,tag_list)
                     
-                    # data for one tag and all sub tags
-                    tag_data = read_sheet_row(book[aoi],START_ROW+i,sub_tags)
+                    # data for one tag and all sub tags from sheet
+                    tag_data_sheet = read_sheet_row(book[aoi],START_ROW+i,sub_tags)
 
-                    #write data to plc
-                    write_plc_row(plc,tag_data)
+                    # compare PLC row to spreadsheet row, add differences to list if any
+                    row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
+                    if row_differences:
+                        tag_data_differences += row_differences
+                        
+                # calculate number of changes
+                num_tag_changes = len(tag_data_differences)
+                
+                #write data to plc
+                if num_tag_changes > 0:
+                    
+                    if num_tag_changes >= 2:
+                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)
+                    else:
+                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
+                    
+                    write_plc_row(plc,tag_data_differences)
 
+                else:
+                    print("No differences for instances of " + aoi)
+
+            elif (num_instances_in_sheet != num_instances_in_plc):
+                print("Discrepancy in number of instances in plc and sheet. Run the read command again. Skipping instances of " + aoi)
             else:
-                print("Skipping instances of " + aoi)
+                print("No instances of " + aoi + " in " + plc_name + " PLC.")
 
         print("Finished writing to " + plc_name + " PLC.")
 

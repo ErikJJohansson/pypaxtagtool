@@ -6,25 +6,49 @@
 
 This project takes the PlantPAX tag configuration spreadsheet and reads/writes to a PLC using Python instead of VBA.
 
-When using read mode, the script will find all the instances of the AOI types in the PLC.
+## Motivation
 
-## Usage
+The original PlantPAX tag configuration tool runs on excel using VBA. The computer the macro is being run on also needs RSLinx classic installed.
+
+Using a Python based version we can forgo the requirement of needing excel on the computer. this script can also be run on computers that don't have RSLinx classic installed or you can't change the driver settings.
+
+Furthermore. The original tool requires you to supply all the tag names for the instances inside the PLC. this will populate the tags upon running the read command. So you won't miss any instances!
+
+Also, this seemed like a fun project with a clearly defined scope.
+
+## Reading tags from PLC
 
 The tool requires a few command line arguments to work. a properly formatted command is shown below
 
 ```
 pypax.py -R ProcessLibraryOnlineConfigTool.xlsm 10.10.16.20/5
 
+```
+
+10.10.16.20/5 is the PLC IP address and slot number of the PLC, without the slot number and just the IP address (like '10.10.16.20' it will default to slot 0)
+
+For read mode. A new file will be created with the input file with the PLC name on the end of it.
+
+Edit the values you want to change in the newly outputted file.
+
+The provided .xlsm repo has all the PlantPAX AOI types and their configuration tag values in it. Please be careful when modifying this file. It's preferable if you don't
+
+The script will loop through each sheet that looks like a PlantPAX AOI and poke the PLC for the number of instances of each type. This then gets written to the "Setup" sheet in the workbook.
+
+For each tag instance, a bulk read will be done to the PLC to get all the tag data. This then gets written to the spreadsheet for the AOI type.
+
+## Writing tags to PLC.
+
+The tool requires a few command line arguments to work. a properly formatted write command is shown below
+
+```
 pypax.py -W ProcessLibraryOnlineConfigTool_CVM.xlsm 10.10.16.20/5
 
 ```
 
--R/-W - switch between read and write mode
+For write mode. Use the desired file with tag information you wish to write to the PLC. If the filename DOES NOT contain the name of the PLC being written to, the script will exit. This is to ensure we are writing to the correct PLC.
 
-For read mode. A new file will be created with the input file with the PLC name on the end of it.
-For write mode. Use the desired file with tag information you wish to write to the PLC. Maybe i'll add that the file name matches the PLC name before writing!
-
-10.10.16.20/5 is the PLC IP address and slot number of the PLC, without the slot number and just the IP address (like '10.10.16.20' it will default to slot 0)
+Write mode will only write the changes detected between the PLC tag value and the spreadsheet tag value. It will first read the data from the PLC and compare it to the spreadsheet values. It will then write the detected differences once it has checked all instances and values of a specific AOI type.
 
 ## Installation
 
