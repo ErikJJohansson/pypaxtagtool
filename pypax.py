@@ -343,7 +343,7 @@ if __name__ == "__main__":
                 if num_tag_changes > 0:
                     
                     if num_tag_changes >= 2:
-                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)
+                        print("Writing " + str(num_tag_changes) + " tag changes to instances of " + aoi)
                     else:
                         print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
                     
