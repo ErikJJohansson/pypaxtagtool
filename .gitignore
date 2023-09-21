@@ -1,3 +1,6 @@
 # ignore the output files of the script
 *.xlsx
 *.xls
+
+# generic
+.DS_Store
