@@ -2,6 +2,7 @@ from pycomm3 import LogixDriver
 from sys import argv
 import openpyxl
 from tqdm import trange, tqdm
+from itertools import product
 
 '''
 
@@ -111,8 +112,6 @@ def set_num_instances(sheet, aoi_name, num):
     if aoi_row != None:
         sheet.cell(aoi_row,4).value = num
 
-
-
 def get_dim_list(base_tag, dim_list):
     '''
     function takes a list which has the array size and turns it into a list with all iterations
@@ -122,21 +121,8 @@ def get_dim_list(base_tag, dim_list):
 
     temp = []
 
-    # this can totally be better, my brain just started hurting
-    # idea is to get a single dimension list of strings with all the indexes so that can be concatenated with base tag
-
-    if len(filtered_list) == 1: # one dimension
-        for i in range(dim_list[0]):
-            temp.append(base_tag + '[' + str(i) + ']')
-    elif len(filtered_list) == 2: # two dimension
-        for i in range(dim_list[0]):
-            for j in range(dim_list[1]):
-                temp.append(base_tag + '[' + str(i) + '][' + str(j) + ']')
-    elif len(filtered_list) == 3: # three dimension
-        for i in range(dim_list[0]):
-            for j in range(dim_list[1]):
-                for k in range(dim_list[2]):
-                    temp.append(base_tag + '[' + str(i) + '][' + str(j) + '][' + str(k) + ']')
+    for indices in product(*[range(dim) for dim in filtered_list]):
+        temp.append(base_tag + ''.join(f'[{i}]' for i in indices))
 
     return temp
 
