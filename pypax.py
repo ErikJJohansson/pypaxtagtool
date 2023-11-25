@@ -32,7 +32,7 @@ def get_aoi_tag_instances(plc, tag_type):
     tag_list = []
 
     for tag, _def in plc.tags.items():
-        if _def['data_type_name'] == tag_type:
+        if _def['data_type_name'] == tag_type and not(_def['alias']):
             if _def['dim'] > 0:
                 tag_list = tag_list + get_dim_list(tag,_def['dimensions'])
             else:
