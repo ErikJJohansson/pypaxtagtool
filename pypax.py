@@ -141,8 +141,7 @@ def read_plc_row(plc, tag_list):
     reads data from plc, returns list of tuples (tag_name, tag_value)
     '''
     
-    if plc.connected:
-        tag_data = plc.read(*tag_list)
+    result = tag_data = plc.read(*tag_list)
 
     # tuple of tag name, data
     tag_data_formatted = []
@@ -163,7 +162,7 @@ def read_plc_row(plc, tag_list):
 
         tag_data_formatted.append((s[0],data))
 
-    return tag_data_formatted
+    return tag_data_formatted, result
 
 def write_plc_row(plc, tag_data):
     result = plc.write(*tag_data)
@@ -290,7 +289,7 @@ def main():
                     tag_list = make_tag_list(base_tags[i],sub_tags)
 
                     # data for one tag and all sub tags
-                    tag_data = read_plc_row(plc,tag_list)
+                    tag_data, read_result = read_plc_row(plc,tag_list)
 
                     write_sheet_row(book[aoi],START_ROW+i,base_tags[i],tag_data)
 
@@ -301,7 +300,7 @@ def main():
         parsed_filename = excelfile.split('.')
 
         # add plc name to file and save to new file
-        outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + 'xlsx' #parsed_filename[len(parsed_filename)-1]
+        outfile = plc_name + '_ConfigTags.' + 'xlsx'
         print('Finished reading from ' + plc_name + ' PLC.')
         print('Saving to file ' + outfile)
         book.save(outfile)
@@ -332,7 +331,7 @@ def main():
 
                     # data for one tag and all sub tags from plc
                     tag_list = make_tag_list(base_tags[i],sub_tags)
-                    tag_data_plc = read_plc_row(plc,tag_list)
+                    tag_data_plc, read_result = read_plc_row(plc,tag_list)
                     
                     # data for one tag and all sub tags from sheet
                     tag_data_sheet = read_sheet_row(book[aoi],START_ROW+i,sub_tags)
@@ -353,7 +352,7 @@ def main():
                     else:
                         print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
                     
-                    write_result =write_plc_row(plc,tag_data_differences)
+                    write_result = write_plc_row(plc,tag_data_differences)
 
                 else:
                     print("No differences for instances of " + aoi)
