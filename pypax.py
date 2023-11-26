@@ -3,6 +3,7 @@ from sys import argv
 import openpyxl
 from tqdm import trange, tqdm
 from itertools import product
+import argparse
 
 '''
 
@@ -140,8 +141,7 @@ def read_plc_row(plc, tag_list):
     reads data from plc, returns list of tuples (tag_name, tag_value)
     '''
     
-    if plc.connected:
-        tag_data = plc.read(*tag_list)
+    result = tag_data = plc.read(*tag_list)
 
     # tuple of tag name, data
     tag_data_formatted = []
@@ -162,11 +162,15 @@ def read_plc_row(plc, tag_list):
 
         tag_data_formatted.append((s[0],data))
 
-    return tag_data_formatted
+    return tag_data_formatted, result
 
 def write_plc_row(plc, tag_data):
-    if plc.connected:
-        plc.write(*tag_data)
+    '''
+    writes tag data to tags in plc
+    '''
+    result = plc.write(*tag_data)
+
+    return result
 
 def write_sheet_row(sheet,row,base_tag,tag_data):
     '''
@@ -200,17 +204,56 @@ def read_sheet_row(sheet,row,sub_tags):
 
     return tag_data
 
-if __name__ == "__main__":
-
-    # Arguments checking
-   
-    if len(argv) == 4:
-        mode = argv[1]
-        excelfile = argv[2]
-        commpath = str(argv[3])
+def failed_tag_formatter(tags, write_mode):
+    '''
+    Function takes list of failed tags and returns string
+    '''
+    if write_mode:
+        return '****WARNING****\nCANNOT WRITE TO\n' + ", ".join(tags) + '\n***************'
     else:
-        print('Cannot run script. Invalid number of arguments.')
-        exit()
+        return '****WARNING****\nCANNOT READ FROM\n' + ", ".join(tags) + '\n***************'       
+
+def get_failed_tags(tag_list, result_list):
+    '''
+    function takes a list of booleans and only returns tags that had issues
+    '''
+    failed_indexes = []
+    failed_tags = []
+
+    failed_indexes = [i for i, val in enumerate(result_list) if not val]
+    failed_tags = failed_tags + [tag_list[i] for i in failed_indexes]
+
+    return failed_tags
+
+def main():
+
+    # default filename of template file included in the repo
+    default_excelfile = 'ProcessLibraryOnlineConfigTool.xlsm'
+
+    # Parse arguments
+   
+    parser = argparse.ArgumentParser(
+        description='Python-based PlantPAX tag configuration tool.',
+        epilog='This tool works on both Windows and Mac.')
+    
+    # Add command-line arguments
+    parser.add_argument('commpath', help='Path to PLC')
+    subparsers = parser.add_subparsers(dest='mode',help='Select read/write mode')
+
+    # parsing read commands, filename is optional and will default to default_excelfile value
+    read_parser = subparsers.add_parser('read', help='Read tags from PLC into spreadsheet')
+    read_parser.add_argument('excelfile', nargs='?', default=default_excelfile,help='Path to excel file')
+
+    # parsing write commands, excelfile is required
+    write_parser = subparsers.add_parser('write', help='Write data from spreadsheet into PLC tags')
+    write_parser.add_argument('excelfile',help='Path to excel file')
+                                       
+    args = parser.parse_args()
+
+    # Access the parsed arguments
+    commpath = args.commpath
+    excelfile = args.excelfile
+    mode = args.mode
 
     # open connection to PLC
 
@@ -229,7 +272,7 @@ if __name__ == "__main__":
     # open excel file
 
     # filename check
-    if mode == '-W' and excelfile.find(plc_name) == -1:
+    if mode == 'write' and excelfile.find(plc_name) == -1:
         print("Filename mismatch. The file '" + excelfile + "' does not contain '" + plc_name + "'.")
         exit()
 
@@ -251,7 +294,7 @@ if __name__ == "__main__":
     setup_sheet = book["Setup"]
 
     # read from PLC
-    if mode == '-R':
+    if mode == 'read':
         print('Reading tags from ' + plc_name + ' PLC.')
         
         for aoi in aoi_sheet_names:
@@ -265,30 +308,36 @@ if __name__ == "__main__":
                 # get subtag list for given AOI
                 sub_tags = get_subtag_list(book[aoi])
 
+                failed_read_tags = []
+
                 # read rows, write to spreadsheet
                 for i in tqdm(range(num_instances),"Reading instances of " + aoi):
                     tag_list = make_tag_list(base_tags[i],sub_tags)
 
                     # data for one tag and all sub tags
-                    tag_data = read_plc_row(plc,tag_list)
+                    tag_data, read_result = read_plc_row(plc,tag_list)
+
+                    # add to failed tags list if we can't find the tag
+                    if not all(read_result):
+                        failed_read_tags = failed_read_tags + get_failed_tags(tag_list,read_result)
 
                     write_sheet_row(book[aoi],START_ROW+i,base_tags[i],tag_data)
 
+                # print to command line if we couldn't read any tags
+                if failed_read_tags:
+                    print(failed_tag_formatter(failed_read_tags,False))
             else:
                 print("No instances of " + aoi + " found in " + plc_name + " PLC.")
 
-
-        parsed_filename = excelfile.split('.')
-
         # add plc name to file and save to new file
-        outfile = parsed_filename[len(parsed_filename)-2] + "_" + plc_name + '.' + 'xlsx' #parsed_filename[len(parsed_filename)-1]
+        outfile = plc_name + '_ConfigTags.' + 'xlsx'
         print('Finished reading from ' + plc_name + ' PLC.')
         print('Saving to file ' + outfile)
         book.save(outfile)
         print('file saved to ' + outfile)
 
     # Write to PLC
-    elif mode == '-W':
+    elif mode == 'write':
         print('Writing tags to ' + plc_name + ' PLC.')
         
         for aoi in aoi_sheet_names:
@@ -307,12 +356,19 @@ if __name__ == "__main__":
 
                 tag_data_differences = []       
 
+                failed_read_tags = []
+                failed_write_tags   =   []
+
                 # read spreadsheet rows, write to plc
                 for i in tqdm(range(num_instances_in_sheet),"Comparing instances of " + aoi):
 
                     # data for one tag and all sub tags from plc
                     tag_list = make_tag_list(base_tags[i],sub_tags)
-                    tag_data_plc = read_plc_row(plc,tag_list)
+                    tag_data_plc, read_result = read_plc_row(plc,tag_list)
+
+                    # add to failed tags list if we can't find the tag
+                    if not all(read_result):
+                        failed_read_tags = failed_read_tags + get_failed_tags(tag_list,read_result)
                     
                     # data for one tag and all sub tags from sheet
                     tag_data_sheet = read_sheet_row(book[aoi],START_ROW+i,sub_tags)
@@ -321,22 +377,33 @@ if __name__ == "__main__":
                     row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
                     if row_differences:
                         tag_data_differences += row_differences
-                        
+
+                # print to command line if we couldn't read any tags
+                if failed_read_tags:
+                    print(failed_tag_formatter(failed_read_tags,False))
+
                 # calculate number of changes
                 num_tag_changes = len(tag_data_differences)
                 
                 #write data to plc
                 if num_tag_changes > 0:
-                    
+                    # format output based on number of changes
                     if num_tag_changes >= 2:
                         print("Writing " + str(num_tag_changes) + " tag changes to instances of " + aoi)
                     else:
                         print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
                     
-                    write_plc_row(plc,tag_data_differences)
+                    write_result = write_plc_row(plc,tag_data_differences)
+
+                    # add to failed tags list if we can't find the tag
+                    if not all(write_result):
+                        failed_write_tags = failed_write_tags + get_failed_tags(tag_list,write_result)
+
+                        # print to command line if we couldn't write any tags
+                        print(failed_tag_formatter(failed_write_tags,True))
 
                 else:
-                    print("No differences for instances of " + aoi)
+                        print("No differences for instances of " + aoi)
 
             elif (num_instances_in_sheet != num_instances_in_plc):
                 print("Discrepancy in number of instances in plc and sheet. Run the read command again. Skipping instances of " + aoi)
@@ -347,3 +414,6 @@ if __name__ == "__main__":
 
     plc.close()
     book.close()
+
+if __name__ == "__main__":
+    main()
