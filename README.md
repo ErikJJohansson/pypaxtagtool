@@ -29,7 +29,7 @@ pypax.py 10.10.17.10/4 read [ProcessLibraryOnlineConfigTool.xlsm]
 
 If no file is specified, the default file in the repo 'ProcessLibraryOnlineConfigTool.xlsm' will be used.
 
-For read mode. A new file will be created with the default file and the PLC name on the end of it.
+For read mode. A new file will be created using the template file. The file will be named PLCNAME_ConfigTags.xlsx.
 
 Edit the values you want to change in the newly outputted file.
 
@@ -44,7 +44,7 @@ For each tag instance, a bulk read will be done to the PLC to get all the tag da
 The tool requires a few command line arguments to work. a properly formatted write command is shown below
 
 ```
-pypax.py 10.10.17.10/4 write ProcessLibraryOnlineConfigTool_PLCNAME.xlsx 
+pypax.py 10.10.17.10/4 write PLCNAME_ConfigTags.xlsx 
 
 ```
 
