@@ -3,6 +3,7 @@ from sys import argv
 import openpyxl
 from tqdm import trange, tqdm
 from itertools import product
+import argparse
 
 '''
 
@@ -165,8 +166,9 @@ def read_plc_row(plc, tag_list):
     return tag_data_formatted
 
 def write_plc_row(plc, tag_data):
-    if plc.connected:
-        plc.write(*tag_data)
+    result = plc.write(*tag_data)
+
+    return result
 
 def write_sheet_row(sheet,row,base_tag,tag_data):
     '''
@@ -200,17 +202,26 @@ def read_sheet_row(sheet,row,sub_tags):
 
     return tag_data
 
-if __name__ == "__main__":
-
+def main():
     # Arguments checking
    
-    if len(argv) == 4:
-        mode = argv[1]
-        excelfile = argv[2]
-        commpath = str(argv[3])
+    parser = argparse.ArgumentParser(description='Python-based PlantPAX tag configuration tool.')
+
+    # Add command-line arguments
+    parser.add_argument('commpath', help='Path to PLC')
+    parser.add_argument('excelfile', help='Path to excel file')
+    parser.add_argument('-w', '--write', action='store_true', help='Write to PLC')
+
+    args = parser.parse_args()
+
+    # Access the parsed arguments
+    commpath = args.commpath
+    excelfile = args.excelfile
+
+    if args.write:
+        mode = '-W'
     else:
-        print('Cannot run script. Invalid number of arguments.')
-        exit()
+        mode = '-R'
 
     # open connection to PLC
 
@@ -333,7 +344,7 @@ if __name__ == "__main__":
                     else:
                         print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
                     
-                    write_plc_row(plc,tag_data_differences)
+                    write_result =write_plc_row(plc,tag_data_differences)
 
                 else:
                     print("No differences for instances of " + aoi)
@@ -347,3 +358,6 @@ if __name__ == "__main__":
 
     plc.close()
     book.close()
+
+if __name__ == "__main__":
+    main()
