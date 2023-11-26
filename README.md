@@ -21,13 +21,15 @@ Also, this seemed like a fun project with a clearly defined scope.
 The tool requires a few command line arguments to work. a properly formatted command is shown below
 
 ```
-pypax.py -R ProcessLibraryOnlineConfigTool.xlsm 10.10.16.20/5
+pypax.py 10.10.17.10/4 read [ProcessLibraryOnlineConfigTool.xlsm]
 
 ```
 
-10.10.16.20/5 is the PLC IP address and slot number of the PLC, without the slot number and just the IP address (like '10.10.16.20' it will default to slot 0)
+10.10.17.10/4 is the PLC IP address and slot number of the PLC, without the slot number and just the IP address (like '10.10.17.10' it will default to slot 0)
 
-For read mode. A new file will be created with the input file with the PLC name on the end of it.
+If no file is specified, the default file in the repo 'ProcessLibraryOnlineConfigTool.xlsm' will be used.
+
+For read mode. A new file will be created with the default file and the PLC name on the end of it.
 
 Edit the values you want to change in the newly outputted file.
 
@@ -42,7 +44,7 @@ For each tag instance, a bulk read will be done to the PLC to get all the tag da
 The tool requires a few command line arguments to work. a properly formatted write command is shown below
 
 ```
-pypax.py -W ProcessLibraryOnlineConfigTool_CVM.xlsm 10.10.16.20/5
+pypax.py 10.10.17.10/4 write ProcessLibraryOnlineConfigTool_PLCNAME.xlsx 
 
 ```
 
@@ -68,7 +70,7 @@ Can you ping the PLC you are trying to read from? Ensure you have network connec
 If you do not know how to ping, run the command below, it should be the same for Mac/Unix and Windows. Replace the IP address with the PLC you wish to ping
 
 ```
-ping 10.10.16.20
+ping 10.10.17.10
 
 ```
 

@@ -203,28 +203,34 @@ def read_sheet_row(sheet,row,sub_tags):
     return tag_data
 
 def main():
-    # Arguments checking
-   
-    parser = argparse.ArgumentParser(description='Python-based PlantPAX tag configuration tool.')
 
+    # default filename of template file included in the repo
     default_excelfile = 'ProcessLibraryOnlineConfigTool.xlsm'
 
+    # Parse arguments
+   
+    parser = argparse.ArgumentParser(
+        description='Python-based PlantPAX tag configuration tool.',
+        epilog='This tool works on both Windows and Mac.')
+    
     # Add command-line arguments
     parser.add_argument('commpath', help='Path to PLC')
-    parser.add_argument('excelfile', nargs='?', default=default_excelfile,help='Path to excel file')
-    parser.add_argument('-w','-W', '--write', action='store_true', help='Write to PLC')
+    subparsers = parser.add_subparsers(dest='mode',help='Select read/write mode')
 
+    # parsing read commands, filename is optional and will default to default_excelfile value
+    read_parser = subparsers.add_parser('read', help='Read tags from PLC into spreadsheet')
+    read_parser.add_argument('excelfile', nargs='?', default=default_excelfile,help='Path to excel file')
+
+    # parsing write commands, excelfile is required
+    write_parser = subparsers.add_parser('write', help='Write data from spreadsheet into PLC tags')
+    write_parser.add_argument('excelfile',help='Path to excel file')
+                                       
     args = parser.parse_args()
 
     # Access the parsed arguments
     commpath = args.commpath
     excelfile = args.excelfile
-
-    # did this as it was the quickest way to test
-    if args.write:
-        mode = '-W'
-    else:
-        mode = '-R'
+    mode = args.mode
 
     # open connection to PLC
 
@@ -243,7 +249,7 @@ def main():
     # open excel file
 
     # filename check
-    if mode == '-W' and excelfile.find(plc_name) == -1:
+    if mode == 'write' and excelfile.find(plc_name) == -1:
         print("Filename mismatch. The file '" + excelfile + "' does not contain '" + plc_name + "'.")
         exit()
 
@@ -265,7 +271,7 @@ def main():
     setup_sheet = book["Setup"]
 
     # read from PLC
-    if mode == '-R':
+    if mode == 'read':
         print('Reading tags from ' + plc_name + ' PLC.')
         
         for aoi in aoi_sheet_names:
@@ -302,7 +308,7 @@ def main():
         print('file saved to ' + outfile)
 
     # Write to PLC
-    elif mode == '-W':
+    elif mode == 'write':
         print('Writing tags to ' + plc_name + ' PLC.')
         
         for aoi in aoi_sheet_names:
