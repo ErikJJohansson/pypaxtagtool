@@ -207,10 +207,12 @@ def main():
    
     parser = argparse.ArgumentParser(description='Python-based PlantPAX tag configuration tool.')
 
+    default_excelfile = 'ProcessLibraryOnlineConfigTool.xlsm'
+
     # Add command-line arguments
     parser.add_argument('commpath', help='Path to PLC')
-    parser.add_argument('excelfile', help='Path to excel file')
-    parser.add_argument('-w', '--write', action='store_true', help='Write to PLC')
+    parser.add_argument('excelfile', nargs='?', default=default_excelfile,help='Path to excel file')
+    parser.add_argument('-w','-W', '--write', action='store_true', help='Write to PLC')
 
     args = parser.parse_args()
 
@@ -218,6 +220,7 @@ def main():
     commpath = args.commpath
     excelfile = args.excelfile
 
+    # did this as it was the quickest way to test
     if args.write:
         mode = '-W'
     else:
