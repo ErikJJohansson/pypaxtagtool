@@ -345,11 +345,10 @@ def main():
             # get aoi info from sheet and plc
             num_instances_in_sheet, num_sub_tags = get_aoi_setup(setup_sheet,aoi)
             base_tags = get_aoi_tag_instances(plc,aoi)
-            num_instances_in_plc = len(base_tags)
 
             # we will skip writing AOI data if there is a mismatch in the amount of instances to compare
             # this kind of forces the user to read from the PLC to refresh the file
-            if num_instances_in_sheet > 0 and (num_instances_in_sheet == num_instances_in_plc):
+            if num_instances_in_sheet > 0:
 
                 # get subtags
                 sub_tags = get_subtag_list(book[aoi])
@@ -404,9 +403,6 @@ def main():
 
                 else:
                         print("No differences for instances of " + aoi)
-
-            elif (num_instances_in_sheet != num_instances_in_plc):
-                print("Discrepancy in number of instances in plc and sheet. Run the read command again. Skipping instances of " + aoi)
             else:
                 print("No instances of " + aoi + " in " + plc_name + " PLC.")
 
