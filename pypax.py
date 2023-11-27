@@ -184,7 +184,7 @@ def write_sheet_row(sheet,row,base_tag,tag_data):
             
         sheet.cell(row,START_COL+i).value = tag_data[i][1]
 
-def read_sheet_row(sheet,row,sub_tags):
+def read_data_sheet_row(sheet,row,sub_tags):
     '''
     reads tag name and data from list
     '''
@@ -202,7 +202,7 @@ def read_sheet_row(sheet,row,sub_tags):
 
         tag_data.append(cell_value)
 
-    return tag_data
+    return base_tag,tag_data
 
 def failed_tag_formatter(tags, write_mode):
     '''
@@ -361,16 +361,16 @@ def main():
                 # read spreadsheet rows, write to plc
                 for i in tqdm(range(num_instances_in_sheet),"Comparing instances of " + aoi):
 
+                    # data for one tag and all sub tags from sheet
+                    base_tag, tag_data_sheet = read_data_sheet_row(book[aoi],START_ROW+i,sub_tags)
+
                     # data for one tag and all sub tags from plc
-                    tag_list = make_tag_list(base_tags[i],sub_tags)
+                    tag_list = make_tag_list(base_tag,sub_tags)
                     tag_data_plc, read_result = read_plc_row(plc,tag_list)
 
                     # add to failed tags list if we can't find the tag
                     if not all(read_result):
                         failed_read_tags = failed_read_tags + get_failed_tags(tag_list,read_result)
-                    
-                    # data for one tag and all sub tags from sheet
-                    tag_data_sheet = read_sheet_row(book[aoi],START_ROW+i,sub_tags)
 
                     # compare PLC row to spreadsheet row, add differences to list if any
                     row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
