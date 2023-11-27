@@ -356,7 +356,7 @@ def main():
                 tag_data_differences = []       
 
                 failed_read_tags = []
-                failed_write_tags   =   []
+                failed_write_tags   = []
 
                 # read spreadsheet rows, write to plc
                 for i in tqdm(range(num_instances_in_sheet),"Comparing instances of " + aoi):
