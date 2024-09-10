@@ -389,7 +389,7 @@ def main():
                     
                     else:
                         # compare PLC row to spreadsheet row, add differences to list if any for that tag
-                        row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
+                        row_differences = list(set(tag_data_sheet).difference(set(tag_data_plc)))
                         if row_differences:
                             tag_data_differences += row_differences
 
