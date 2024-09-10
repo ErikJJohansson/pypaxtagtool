@@ -182,7 +182,11 @@ def write_plc_row(plc, tag_data):
     '''
     result = plc.write(*tag_data)
 
-    return result
+    # added to always format the result as a list
+    if len(tag_data) == 1:
+        return [result]
+    else:
+        return result
 
 def write_sheet_row(sheet,row,base_tag,tag_data):
     '''
@@ -356,7 +360,6 @@ def main():
 
             # get aoi info from sheet and plc
             num_instances_in_sheet = get_aoi_setup(book[aoi])
-            print(num_instances_in_sheet)
             base_tags = get_aoi_tag_instances(plc,aoi)
 
             # Check to make sure there are instances in sheet
@@ -370,7 +373,7 @@ def main():
                 failed_read_tags = []
                 failed_write_tags   = []
 
-                # read spreadsheet rows, write to plc
+                # read AOI data from each row in spreadsheet, add differences to tag_data_differences
                 for i in tqdm(range(num_instances_in_sheet),"Comparing instances of " + aoi):
 
                     # data for one tag and all sub tags from sheet
@@ -390,7 +393,7 @@ def main():
                         if row_differences:
                             tag_data_differences += row_differences
 
-                # print to command line if we couldn't read any tags
+                # print to command line if we couldn't read any tags for that instance
                 if failed_read_tags:
                     print(failed_tag_formatter(failed_read_tags,False))
 
@@ -403,13 +406,14 @@ def main():
                     if num_tag_changes >= 2:
                         print("Writing " + str(num_tag_changes) + " tag changes to instances of " + aoi)
                     else:
-                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
+                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi) 
+                        
+                    # store results of PLC write
+                    write_result = write_plc_row(plc,tag_data_differences)  
                     
-                    write_result = write_plc_row(plc,tag_data_differences)
-
                     # add to failed tags list if we can't find the tag
                     if not all(write_result):
-                        failed_write_tags = failed_write_tags + get_failed_tags(tag_list,write_result)
+                        failed_write_tags = get_failed_tags(tag_list,write_result)
 
                         # print to command line if we couldn't write any tags
                         print(failed_tag_formatter(failed_write_tags,True))
