@@ -89,18 +89,30 @@ def search_value_in_col(sheet, search_string, col_idx=1):
     
     return None
 
-def get_aoi_setup(sheet, aoi_name):
+def get_aoi_setup(sheet):
+    '''
+    Finds the number of AOIs in a current sheet
+    '''
 
-    # 8 is col H "Worksheet tab name"
-    aoi_row = search_value_in_col(sheet, aoi_name, 8)
+    i = 0
 
-    num_aoi_tags = sheet.cell(aoi_row,NUM_INSTANCES_COL).value
-    num_sub_tags = sheet.cell(aoi_row,NUM_SUBTAGS_COL).value
+    while True:                   
 
-    if aoi_row != None:
-        return num_aoi_tags, num_sub_tags
-    else:
-        return 0,0
+        # read row
+        cell_value = sheet.cell(START_ROW+i,NAME_COL).value
+
+        # conditions to see if it's a legit value
+        tag_exists = (cell_value != None) or (cell_value == '')
+
+        # NoneNone means the cell is blank, so we assume we are done
+        if tag_exists:
+            i += 1
+        else:
+            break
+
+    num_aoi_tags = i
+
+    return num_aoi_tags
 
 def set_num_instances(sheet, aoi_name, num):
     '''
@@ -343,18 +355,18 @@ def main():
         for aoi in aoi_sheet_names:
 
             # get aoi info from sheet and plc
-            num_instances_in_sheet, num_sub_tags = get_aoi_setup(setup_sheet,aoi)
+            num_instances_in_sheet = get_aoi_setup(book[aoi])
+            print(num_instances_in_sheet)
             base_tags = get_aoi_tag_instances(plc,aoi)
 
-            # we will skip writing AOI data if there is a mismatch in the amount of instances to compare
-            # this kind of forces the user to read from the PLC to refresh the file
+            # Check to make sure there are instances in sheet
             if num_instances_in_sheet > 0:
 
-                # get subtags
+                # get subtags of datatype
                 sub_tags = get_subtag_list(book[aoi])
 
+                # reset lists
                 tag_data_differences = []       
-
                 failed_read_tags = []
                 failed_write_tags   = []
 
@@ -370,12 +382,13 @@ def main():
 
                     # add to failed tags list if we can't find the tag
                     if not all(read_result):
-                        failed_read_tags = failed_read_tags + get_failed_tags(tag_list,read_result)
-
-                    # compare PLC row to spreadsheet row, add differences to list if any
-                    row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
-                    if row_differences:
-                        tag_data_differences += row_differences
+                        failed_read_tags = failed_read_tags + [base_tag] #get_failed_tags(tag_list,read_result)
+                    
+                    else:
+                        # compare PLC row to spreadsheet row, add differences to list if any for that tag
+                        row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
+                        if row_differences:
+                            tag_data_differences += row_differences
 
                 # print to command line if we couldn't read any tags
                 if failed_read_tags:
