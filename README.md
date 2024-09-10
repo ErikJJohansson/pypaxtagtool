@@ -50,7 +50,7 @@ pypax.py 10.10.17.10/4 write PLCNAME_ConfigTags.xlsx
 
 For write mode. Use the desired file with tag information you wish to write to the PLC. If the filename DOES NOT contain the name of the PLC being written to, the script will exit. This is to ensure we are writing to the correct PLC.
 
-Write mode will only write the changes detected between the PLC tag value and the spreadsheet tag value. It will first read the data from the PLC and compare it to the spreadsheet values. It will then write the detected differences once it has checked all instances and values of a specific AOI type.
+Write mode will only write the changes detected between the PLC tag value and the spreadsheet tag value. The number of instances to write is determined by the rows in each AOI spreadsheet. There must be no spaces between any names in the names column otherwise the blank will be treated like the last row to write.
 
 ## Installation
 
