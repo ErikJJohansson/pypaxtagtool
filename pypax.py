@@ -46,7 +46,7 @@ def get_aoi_list(excel_book):
 
     # PlantPAX AOI's have an _ for second character
     for sheet in excel_book.sheetnames:
-        if sheet[1] == '_':
+        if sheet[1] == '_' or (sheet[0] == 'S' and sheet[1] == 'I' and sheet[2] == 'F'):
             aoi_list.append(sheet)
 
     return aoi_list
@@ -413,7 +413,11 @@ def main():
                     
                     # add to failed tags list if we can't find the tag
                     if not all(write_result):
-                        failed_write_tags = get_failed_tags(tag_list,write_result)
+
+                        # extract tag name from list of tuples
+                        tag_difference_list = [t[0] for t in tag_data_differences]
+
+                        failed_write_tags = get_failed_tags(tag_difference_list,write_result)
 
                         # print to command line if we couldn't write any tags
                         print(failed_tag_formatter(failed_write_tags,True))
