@@ -1,10 +1,10 @@
-# PythonPlantPAX
+# Python PlantPAX Tag Tool
 
 
 
 ## Description
 
-This project takes the PlantPAX tag configuration spreadsheet and reads/writes to a PLC using Python instead of VBA.
+This project takes the PlantPAX tag configuration spreadsheet and reads/writes to a PLC using Python instead of VBA. This works on the V4.10 PlantPAX Library
 
 ## Motivation
 
