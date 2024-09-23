@@ -46,7 +46,7 @@ def get_aoi_list(excel_book):
 
     # PlantPAX AOI's have an _ for second character
     for sheet in excel_book.sheetnames:
-        if sheet[1] == '_':
+        if sheet[1] == '_' or (sheet[0] == 'S' and sheet[1] == 'I' and sheet[2] == 'F'):
             aoi_list.append(sheet)
 
     return aoi_list
@@ -89,18 +89,30 @@ def search_value_in_col(sheet, search_string, col_idx=1):
     
     return None
 
-def get_aoi_setup(sheet, aoi_name):
+def get_aoi_setup(sheet):
+    '''
+    Finds the number of AOIs in a current sheet
+    '''
 
-    # 8 is col H "Worksheet tab name"
-    aoi_row = search_value_in_col(sheet, aoi_name, 8)
+    i = 0
 
-    num_aoi_tags = sheet.cell(aoi_row,NUM_INSTANCES_COL).value
-    num_sub_tags = sheet.cell(aoi_row,NUM_SUBTAGS_COL).value
+    while True:                   
 
-    if aoi_row != None:
-        return num_aoi_tags, num_sub_tags
-    else:
-        return 0,0
+        # read row
+        cell_value = sheet.cell(START_ROW+i,NAME_COL).value
+
+        # conditions to see if it's a legit value
+        tag_exists = (cell_value != None) or (cell_value == '')
+
+        # NoneNone means the cell is blank, so we assume we are done
+        if tag_exists:
+            i += 1
+        else:
+            break
+
+    num_aoi_tags = i
+
+    return num_aoi_tags
 
 def set_num_instances(sheet, aoi_name, num):
     '''
@@ -170,7 +182,11 @@ def write_plc_row(plc, tag_data):
     '''
     result = plc.write(*tag_data)
 
-    return result
+    # added to always format the result as a list
+    if len(tag_data) == 1:
+        return [result]
+    else:
+        return result
 
 def write_sheet_row(sheet,row,base_tag,tag_data):
     '''
@@ -184,7 +200,7 @@ def write_sheet_row(sheet,row,base_tag,tag_data):
             
         sheet.cell(row,START_COL+i).value = tag_data[i][1]
 
-def read_sheet_row(sheet,row,sub_tags):
+def read_data_sheet_row(sheet,row,sub_tags):
     '''
     reads tag name and data from list
     '''
@@ -202,7 +218,7 @@ def read_sheet_row(sheet,row,sub_tags):
 
         tag_data.append(cell_value)
 
-    return tag_data
+    return base_tag,tag_data
 
 def failed_tag_formatter(tags, write_mode):
     '''
@@ -343,42 +359,41 @@ def main():
         for aoi in aoi_sheet_names:
 
             # get aoi info from sheet and plc
-            num_instances_in_sheet, num_sub_tags = get_aoi_setup(setup_sheet,aoi)
+            num_instances_in_sheet = get_aoi_setup(book[aoi])
             base_tags = get_aoi_tag_instances(plc,aoi)
-            num_instances_in_plc = len(base_tags)
 
-            # we will skip writing AOI data if there is a mismatch in the amount of instances to compare
-            # this kind of forces the user to read from the PLC to refresh the file
-            if num_instances_in_sheet > 0 and (num_instances_in_sheet == num_instances_in_plc):
+            # Check to make sure there are instances in sheet
+            if num_instances_in_sheet > 0:
 
-                # get subtags
+                # get subtags of datatype
                 sub_tags = get_subtag_list(book[aoi])
 
+                # reset lists
                 tag_data_differences = []       
-
                 failed_read_tags = []
-                failed_write_tags   =   []
+                failed_write_tags   = []
 
-                # read spreadsheet rows, write to plc
+                # read AOI data from each row in spreadsheet, add differences to tag_data_differences
                 for i in tqdm(range(num_instances_in_sheet),"Comparing instances of " + aoi):
 
+                    # data for one tag and all sub tags from sheet
+                    base_tag, tag_data_sheet = read_data_sheet_row(book[aoi],START_ROW+i,sub_tags)
+
                     # data for one tag and all sub tags from plc
-                    tag_list = make_tag_list(base_tags[i],sub_tags)
+                    tag_list = make_tag_list(base_tag,sub_tags)
                     tag_data_plc, read_result = read_plc_row(plc,tag_list)
 
                     # add to failed tags list if we can't find the tag
                     if not all(read_result):
-                        failed_read_tags = failed_read_tags + get_failed_tags(tag_list,read_result)
+                        failed_read_tags = failed_read_tags + [base_tag] #get_failed_tags(tag_list,read_result)
                     
-                    # data for one tag and all sub tags from sheet
-                    tag_data_sheet = read_sheet_row(book[aoi],START_ROW+i,sub_tags)
+                    else:
+                        # compare PLC row to spreadsheet row, add differences to list if any for that tag
+                        row_differences = list(set(tag_data_sheet).difference(set(tag_data_plc)))
+                        if row_differences:
+                            tag_data_differences += row_differences
 
-                    # compare PLC row to spreadsheet row, add differences to list if any
-                    row_differences = list(set(tag_data_sheet)-set(tag_data_plc))
-                    if row_differences:
-                        tag_data_differences += row_differences
-
-                # print to command line if we couldn't read any tags
+                # print to command line if we couldn't read any tags for that instance
                 if failed_read_tags:
                     print(failed_tag_formatter(failed_read_tags,False))
 
@@ -391,22 +406,24 @@ def main():
                     if num_tag_changes >= 2:
                         print("Writing " + str(num_tag_changes) + " tag changes to instances of " + aoi)
                     else:
-                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi)   
+                        print("Writing " + str(num_tag_changes) + " tag change to instances of " + aoi) 
+                        
+                    # store results of PLC write
+                    write_result = write_plc_row(plc,tag_data_differences)  
                     
-                    write_result = write_plc_row(plc,tag_data_differences)
-
                     # add to failed tags list if we can't find the tag
                     if not all(write_result):
-                        failed_write_tags = failed_write_tags + get_failed_tags(tag_list,write_result)
+
+                        # extract tag name from list of tuples
+                        tag_difference_list = [t[0] for t in tag_data_differences]
+
+                        failed_write_tags = get_failed_tags(tag_difference_list,write_result)
 
                         # print to command line if we couldn't write any tags
                         print(failed_tag_formatter(failed_write_tags,True))
 
                 else:
                         print("No differences for instances of " + aoi)
-
-            elif (num_instances_in_sheet != num_instances_in_plc):
-                print("Discrepancy in number of instances in plc and sheet. Run the read command again. Skipping instances of " + aoi)
             else:
                 print("No instances of " + aoi + " in " + plc_name + " PLC.")
 
