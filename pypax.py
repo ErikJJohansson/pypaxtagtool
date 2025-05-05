@@ -16,6 +16,7 @@ import argparse
 START_ROW = 10
 START_COL = 5
 NAME_COL = 3
+DATA_TYPE_ROW = 6
 TOP_TAG_ROW = 7
 BOTTOM_TAG_ROW = 8
 
@@ -211,12 +212,26 @@ def read_data_sheet_row(sheet,row,sub_tags):
     # loop through subtags, get data
     for i in range(len(sub_tags)):
 
-        if sheet.cell(row,START_COL+i).value == None:
-            cell_value = (base_tag + sub_tags[i],'')
-        else:
-            cell_value = (base_tag + sub_tags[i],sheet.cell(row,START_COL+i).value)
+        cell_value = sheet.cell(row,START_COL+i).value
+        cell_type  = sheet.cell(DATA_TYPE_ROW,START_COL+i).value
 
-        tag_data.append(cell_value)
+        if cell_value == None:
+            subtag_value = (base_tag + sub_tags[i],'')
+        
+        # this is checking the datatype and converting it to the appropriate type before storing in the tuple
+        else:
+            if 'INT' in cell_type:
+                subtag_value = (base_tag + sub_tags[i],int(cell_value))
+            elif 'BOOL' in cell_type:
+                subtag_value = (base_tag + sub_tags[i],int(cell_value))
+            elif 'STRING' in cell_type:
+                subtag_value = (base_tag + sub_tags[i],cell_value)
+            elif 'REAL' in cell_type:
+                subtag_value = (base_tag + sub_tags[i],float(cell_value))
+            else:
+               subtag_value = (base_tag + sub_tags[i],cell_value) 
+
+        tag_data.append(subtag_value)
 
     return base_tag,tag_data
 
