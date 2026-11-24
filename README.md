@@ -1,5 +1,7 @@
 # PyPaxTagTool — PlantPAX Tag Configuration (CLI + Webapp)
 
+[![CI](https://github.com/ErikJJohansson/pypaxtagtool/actions/workflows/ci.yml/badge.svg?branch=feature/webapp)](https://github.com/ErikJJohansson/pypaxtagtool/actions/workflows/ci.yml)
+
 Read and write PlantPAX AOI configuration tags on a PLC over EtherNet/IP,
 using Python instead of Excel VBA. Two interfaces share one core library,
 so they cannot drift apart:
