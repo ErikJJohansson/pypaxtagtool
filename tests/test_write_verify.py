@@ -41,6 +41,7 @@ def app(workbook, audit_dir):
         plc_factory=lambda commpath: FakePLC(commpath),
         template_path=str(workbook),
         audit_dir=str(audit_dir),
+        snapshot_dir=str(audit_dir.parent / "snapshots"),
     )
 
 
@@ -101,6 +102,7 @@ def test_no_read_back_retry_when_disabled(workbook, audit_dir, tmp_path):
         template_path=str(workbook),
         settings=AppSettings(read_back_retries=0),
         audit_dir=str(audit_dir),
+        snapshot_dir=str(tmp_path / "snapshots"),
     )
     client = TestClient(app)
     assert client.post("/api/connect", json={"commpath": "10.0.0.1/0"}).json()["connected"]
@@ -140,6 +142,91 @@ def test_already_at_value_verifies_without_writing(connected, app):
     ]
     assert plc.write_log == []  # no write was issued at all
     assert connected.get("/api/changes").json() == []
+
+
+def test_write_does_not_revert_unstaged_drifted_tag(connected, app):
+    """A write must only touch staged tags.
+
+    If a PLC value drifted from the baseline since the tab was loaded
+    (another operator, the process itself), a write of a different
+    staged tag must not silently write the stale baseline back over
+    the drifted value — and the drifted tag must not appear in the
+    write at all.
+    """
+    assert connected.get("/api/aois/P_AIn").status_code == 200
+    plc = app.state.pypax.plc
+    plc._values["FIT_101.Cfg_HiLim"] = 77.0  # external change, never staged
+    response = connected.post(
+        "/api/aois/P_AIn/paste",
+        json={
+            "tsv": "New desc",
+            "anchor_instance": "FIT_101",
+            "anchor_subtag": ".Cfg_Desc",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["applied"] == 1
+    body = connected.post("/api/write", json={"plc_name": PLC_NAME}).json()
+    assert body["summary"] == {"verified": 1, "mismatch": 0, "failed": 0}
+    assert body["results"] == [{"tag": "FIT_101.Cfg_Desc", "status": "verified"}]
+    assert plc._values["FIT_101.Cfg_HiLim"] == 77.0
+    assert "FIT_101.Cfg_HiLim" not in [tag for tag, _ in plc.write_log]
+
+
+_MINIMAL_L5X = """<?xml version="1.0" encoding="UTF-8"?>
+<RSLogix5000Content TargetName="P_TestValve" TargetType="AddOnInstructionDefinition" TargetRevision="1.0">
+<Controller Use="Context" Name="Test">
+<AddOnInstructionDefinition Name="P_TestValve" Revision="1.0">
+<Parameters>
+<Parameter Name="Cfg_Desc" TagType="Base" DataType="STRING_40" Usage="Input"><Description><![CDATA[Desc]]></Description><DefaultData Format="String"><![CDATA['V']]></DefaultData></Parameter>
+</Parameters>
+<LocalTags></LocalTags>
+</AddOnInstructionDefinition>
+</Controller>
+</RSLogix5000Content>
+"""
+
+
+def test_write_still_works_after_import_confirm(workbook, tmp_path):
+    """Staged changes survive an import confirm; the write must not 502.
+
+    Confirming an import invalidates the cached AOI model; a write
+    issued afterwards (with staged changes for another AOI still
+    pending) used to crash on the None model.
+    """
+    app = create_app(
+        plc_factory=lambda commpath: FakePLC(commpath),
+        template_path=str(workbook),
+        audit_dir=str(tmp_path / "audit"),
+        import_dir=str(tmp_path / "imports"),
+        custom_aoi_dir=str(tmp_path / "custom"),
+        snapshot_dir=str(tmp_path / "snapshots"),
+    )
+    client = TestClient(app)
+    assert client.post("/api/connect", json={"commpath": "10.0.0.1/0"}).json()["connected"] is True
+    assert client.get("/api/aois/P_AIn").status_code == 200
+    response = client.post(
+        "/api/aois/P_AIn/paste",
+        json={
+            "tsv": "New desc",
+            "anchor_instance": "FIT_101",
+            "anchor_subtag": ".Cfg_Desc",
+        },
+    )
+    assert response.json()["applied"] == 1
+    upload = client.post(
+        "/api/aois/import",
+        files={"file": ("P_TestValve.L5X", _MINIMAL_L5X.encode(), "application/xml")},
+    )
+    assert upload.status_code == 200
+    confirm = client.post(
+        "/api/aois/import/confirm",
+        json={"proposal_id": upload.json()["proposal_id"]},
+    )
+    assert confirm.status_code == 200
+    body = client.post("/api/write", json={"plc_name": PLC_NAME})
+    assert body.status_code == 200, body.json()
+    assert body.json()["summary"] == {"verified": 1, "mismatch": 0, "failed": 0}
 
 
 def test_discard_changes(connected):

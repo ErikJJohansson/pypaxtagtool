@@ -7,7 +7,9 @@ backend is built on the same core, so the two cannot drift apart.
 
 from __future__ import annotations
 
+from .custom_aoi import check_collision, load_custom_aois, save_custom_aoi
 from .diff import REAL_TOLERANCE, row_differences, values_equal
+from .l5x import AoiDefinition, Column, Member, curate_columns, learn_string_sizes, parse_l5x
 from .layout import (
     BOTTOM_TAG_ROW,
     DATA_TYPE_ROW,
@@ -45,10 +47,13 @@ from .spreadsheet import (
 )
 
 __all__ = [
+    "AoiDefinition",
     "BOTTOM_TAG_ROW",
+    "Column",
     "DATA_TYPE_ROW",
     "MAX_TAGS_PER_READ",
     "MAX_TAGS_PER_WRITE",
+    "Member",
     "NAME_COL",
     "REAL_TOLERANCE",
     "SETUP_NUM_INSTANCES_COL",
@@ -59,6 +64,8 @@ __all__ = [
     "START_ROW",
     "TOP_TAG_ROW",
     "build_tag_index",
+    "check_collision",
+    "curate_columns",
     "failed_tag_formatter",
     "get_aoi_list",
     "get_aoi_setup",
@@ -67,11 +74,15 @@ __all__ = [
     "get_failed_tags",
     "get_subtag",
     "get_subtag_list",
+    "learn_string_sizes",
+    "load_custom_aois",
     "make_tag_list",
+    "parse_l5x",
     "read_aoi_instances",
     "read_data_sheet_row",
     "read_plc_row",
     "row_differences",
+    "save_custom_aoi",
     "search_value_in_col",
     "set_num_instances",
     "values_equal",

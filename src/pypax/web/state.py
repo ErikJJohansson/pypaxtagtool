@@ -41,6 +41,33 @@ class AppState:
         self.audit = AuditLog(audit_dir)
         # Cached AOI model from the template workbook (or None).
         self.aoi_model = None
+        # Custom AOIs (Phase 8): names present in the model that came
+        # from config/aoi/custom/*.yaml rather than the template.
+        self.custom_aoi_names: set[str] = set()
+        # Custom-AOI storage and L5X import state (set by create_app).
+        self.custom_aoi_dir = None  # Path | None; None means the repo default
+        self.import_dir = None  # Path | None
+        # String-UDT size registry file (set by create_app); None means
+        # the repo default (config/string_udt_sizes.yaml).
+        self.string_registry_path = None  # Path | None
+        # Snapshot storage (Phase 9a), set by create_app.
+        self.snapshot_dir = None  # Path | None
+        # Confirmable import proposals, keyed by proposal_id; a proposal
+        # is consumed (removed) on successful confirm.
+        self.proposals: dict[str, object] = {}
+        # Imported file path -> proposal_id (rescan keeps the id stable).
+        self.proposals_by_path: dict[str, str] = {}
+        # Column metadata (type/description) per AOI, cached from
+        # proposals. Kept after confirm so confirmed AOIs still serve
+        # typed columns; dropped when the custom AOI is deleted.
+        self.column_meta: dict[str, dict[str, object]] = {}
+        # Confirmed column metadata per AOI: written only at confirm
+        # time (fresh import or re-import), never by a proposal
+        # registration — so a re-import diff always compares against
+        # the confirmed definition, not the latest unconfirmed
+        # proposal. Seeded at startup when the file on disk still
+        # matches the hash stored in the YAML. Used only for diffing.
+        self.confirmed_meta: dict[str, dict[str, object]] = {}
 
     @property
     def connected(self) -> bool:
@@ -55,3 +82,13 @@ class AppState:
         self.baseline = {}
         self.staged = {}
         self.aoi_model = None
+
+    def drop_aoi_data(self, aoi: str) -> None:
+        """Drop baseline + staged changes for one AOI (re-import/delete).
+
+        Column metadata is kept: a re-imported AOI re-enriches from its
+        new proposal, and a deleted AOI drops its metadata separately.
+        """
+        self.baseline.pop(aoi, None)
+        for key in [key for key in self.staged if key[0] == aoi]:
+            del self.staged[key]

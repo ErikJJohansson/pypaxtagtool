@@ -1,0 +1,15 @@
+# String-UDT sizes learned from Studio 5000 .L5X imports.
+#
+# Each entry is a string type the validator length-checks, with the
+# size (in characters) and the export it was learned from. Pinned
+# sizes (STRING 82, STRING_AREA 8, STRING_COND 20, STRING_NAVTAG 20)
+# live in src/pypax/string_sizes.py and always win — an entry here
+# that conflicts with a pinned size is ignored at import time.
+# Hand-editing is fine, but a malformed entry is skipped, never
+# guessed. Only type names, sizes, and source filenames belong here.
+STRING_COND:
+  size: 20
+  source: P_Intlk_4.10.06_AOI.L5X
+STRING_NAVTAG:
+  size: 20
+  source: P_Intlk_4.10.06_AOI.L5X

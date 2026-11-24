@@ -45,3 +45,11 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# The synthetic .L5X fixtures are long XML literals; their lines cannot
+# be wrapped without changing the fixture content.
+"tests/test_l5x.py" = ["E501"]
+"tests/test_web_import.py" = ["E501"]
+"tests/test_write_verify.py" = ["E501"]
+"tests/test_string_sizes.py" = ["E501"]

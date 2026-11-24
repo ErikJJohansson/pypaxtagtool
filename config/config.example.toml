@@ -13,6 +13,13 @@
 # write_chunk_size = 100
 # real_tolerance = 0.000001
 # read_back_retries = 1
+# Folder scanned for .L5X files by the AOI import scan, and where uploads
+# are persisted. Defaults to aoi_imports/ under the working directory.
+# aoi_import_dir = "aoi_imports"
+# Folder holding PLC snapshots (Phase 9a): manual snapshots at the top
+# level, auto-snapshots under auto/. Defaults to snapshots/ under the
+# working directory.
+# snapshot_dir = "snapshots"
 
 [[profiles]]
 name = "example-test-plc"

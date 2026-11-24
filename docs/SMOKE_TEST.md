@@ -77,20 +77,12 @@ permissive, a running motor command, or anything in a running loop.
 - [ ] Write the tag back to its old value the same way, and confirm it
       reports `verified` again. The PLC is now exactly as you found it.
 
-## 3. P_ValveMO spelling check
+## 3. P_ValveMO spelling check — resolved Nov 24, 2026
 
-There is one known discrepancy between the template spreadsheet and
-`AOI_definitions.py`, recorded as a test exception because neither file
-has been touched: **P_ValveMO position 10**.
-
-- [ ] In Studio 5000, open a real P_ValveMO instance and look at the
-      member at position 10. Record the spelling:
-      `Real spelling: ______________________`
-      (`.Cfg_CoastToLS` = spreadsheet spelling; `.Cfg_CoastTolS` =
-      definitions spelling.)
-- [ ] Record the correct spelling here and tell Muse — whichever file is
-      wrong gets a one-line fix in a follow-up commit. Do not edit either
-      file yourself mid-test.
+Settled before any live test: Erik's Studio 5000 export
+(`P_ValveMO_4.10.06_AOI.L5X`, TargetRevision 4.10.06) shows the AOI
+parameter is `Cfg_CoastToLS`. The spreadsheet spelling was correct;
+`AOI_definitions.py` was fixed to match. No action needed here.
 
 ## 4. Rollback — how to revert a bad write
 

@@ -3,14 +3,16 @@
 Covers: vendored AG Grid files exist and are local (no CDN), the SPA files
 exist, the JS only calls the frozen REST contract endpoints, the mock data
 shapes match the contract, the write modal requires typing the PLC name,
-the Export button is enabled and wired to /api/export, and the dev mock
-server answers the contract end to end over real HTTP.
+the Export button is enabled and wired to /api/export, the Phase 8 import
+UI elements and API methods exist, and the dev mock server answers the
+contract end to end over real HTTP.
 """
 
 from __future__ import annotations
 
 import http.client
 import importlib.util
+import io
 import json
 import re
 import threading
@@ -31,10 +33,18 @@ ALLOWED_API_PATHS = {
     "/api/aois",
     "/api/aois/{aoi}",
     "/api/aois/{aoi}/paste",
+    "/api/aois/import",
+    "/api/aois/scan",
+    "/api/aois/import/confirm",
+    "/api/aois/custom",
     "/api/changes",
     "/api/write",
     "/api/audit",
     "/api/export",
+    "/api/string-limits",
+    # Phase 9a snapshots: one literal covers list/save/download/
+    # compare/restore/delete (all start with /api/snapshots).
+    "/api/snapshots",
 }
 
 CDN_MARKERS = ("https://", "http://", "cdn.jsdelivr.net", "unpkg.com", "cdnjs")
@@ -96,11 +106,113 @@ def test_js_calls_only_frozen_endpoints():
     assert not unknown, f"app.js calls endpoints outside the frozen contract: {unknown}"
 
 
+def test_import_ui_elements_exist():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    for element_id in (
+        "import-btn",
+        "import-file",
+        "scan-btn",
+        "import-status",
+        "scan-results",
+        "scan-proposals",
+        "scan-skipped",
+        "import-modal",
+        "import-meta",
+        "import-nested",
+        "import-columns",
+        "import-select-all-btn",
+        "import-select-none-btn",
+        "import-cancel-btn",
+        "import-confirm-btn",
+        "import-modal-error",
+        "remove-aoi-btn",
+        "remove-modal",
+        "remove-aoi-name",
+        "remove-cancel-btn",
+        "remove-confirm-btn",
+        "remove-modal-error",
+    ):
+        assert f'id="{element_id}"' in html, f"missing import UI element: {element_id}"
+    for token in (
+        "uploadImport",
+        "scanAois",
+        "confirmImport",
+        "removeCustomAoi",
+        "MOCK_PROPOSAL",
+        "custom-badge",
+        "openProposalModal",
+        "confirmImportProposal",
+        "/api/aois/import",
+        "/api/aois/scan",
+        "/api/aois/import/confirm",
+        "/api/aois/custom/",
+    ):
+        assert token in js, f"app.js missing import token: {token}"
+    css = (STATIC / "styles.css").read_text(encoding="utf-8")
+    assert ".custom-badge" in css
+    assert ".import-table" in css
+
+
+def test_snapshot_ui_elements_exist():
+    """Phase 9a snapshot panel: markup, JS API methods, and CSS."""
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    for element_id in (
+        "snapshots-panel",
+        "snapshot-save-btn",
+        "refresh-snapshots-btn",
+        "snapshot-list",
+        "snapshot-diff",
+        "snapshot-status",
+    ):
+        assert f'id="{element_id}"' in html, f"missing snapshot UI element: {element_id}"
+    for token in (
+        "listSnapshots",
+        "saveSnapshot",
+        "downloadSnapshot",
+        "compareSnapshot",
+        "restoreSnapshot",
+        "deleteSnapshot",
+        "/api/snapshots",
+        "renderSnapshotDiff",
+        "onRestoreSnapshot",
+        "auto_snapshot",
+    ):
+        assert token in js, f"app.js missing snapshot token: {token}"
+    css = (STATIC / "styles.css").read_text(encoding="utf-8")
+    assert ".snapshot-item" in css
+    assert ".snapshot-diff" in css
+
+
 def test_js_uses_ag_grid_create_grid():
     js = (STATIC / "app.js").read_text(encoding="utf-8")
     assert "agGrid.createGrid" in js
     assert "cell-changed" in js
     assert "cell-rejected" in js
+
+
+def test_bool_cells_are_checkboxes_and_strings_length_checked():
+    """BOOL columns render as checkboxes with AG Grid's checkbox editor;
+    strings are length-checked against their type (STRING_N holds N,
+    STRING holds 82, STRING_Area holds 8), mirroring the spreadsheet.
+    Learned sizes arrive from GET /api/string-limits at startup
+    (``learnedLimits``), with the pinned map as fallback."""
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    for token in (
+        "agCheckboxCellEditor",
+        "singleClickEdit",
+        'type="checkbox"',
+        "stringLimit",
+        "-character limit for",
+        "STRING_AREA",
+        "STRING_NAVTAG",
+        "learnedLimits",
+        "getStringLimits",
+        "/api/string-limits",
+    ):
+        assert token in js, f"app.js missing token: {token}"
+    assert "includes('BOOL')" in js
 
 
 def test_export_button_enabled_and_wired():
@@ -114,6 +226,37 @@ def test_export_button_enabled_and_wired():
     assert "exportSpreadsheet" in js
     assert "fetch('/api/export')" in js
     assert "Content-Disposition" in js
+
+
+def test_connect_sends_no_profile_when_field_is_empty():
+    """An empty profile field must mean 'no profile' (null), not 'default'.
+
+    The backend 404s on an unknown profile, and no 'default' profile
+    exists unless the user configured one — sending 'default' made
+    connecting impossible out of the box.
+    """
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "|| null" in js
+    assert "|| 'default'" not in js
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert 'placeholder="default"' not in html
+
+
+def test_open_tab_reports_load_failures():
+    """A tab whose PLC read fails must say so instead of hanging on
+    'Loading ...' with an empty grid (the getAoi call used to reject
+    unhandled)."""
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "Could not load" in js
+
+
+def test_tab_highlight_matches_exact_aoi_name():
+    """The active tab is matched by exact AOI name, not by prefix —
+    P_AIn and P_AInAdv used to highlight together."""
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "btn.dataset.aoi" in js
+    assert "btn.dataset.aoi === aoi" in js
+    assert "textContent.startsWith(aoi)" not in js
 
 
 def test_write_modal_requires_typing_plc_name():
@@ -204,6 +347,10 @@ def test_mock_server_contract_over_http():
             {"tsv": "95", "anchor_instance": "FIT-101", "anchor_subtag": ".Cfg_HiLim"},
         )
         assert status == 200 and len(body["applied"]) == 1
+        # Paste returns the staged changes for the AOI (a list), like the
+        # real backend — not a count.
+        assert isinstance(body["staged"], list) and len(body["staged"]) == 1
+        assert body["staged"][0]["tag"] == "FIT-101.Cfg_HiLim"
 
         status, changes = call("GET", "/api/changes")
         assert status == 200 and len(changes) == 1
@@ -218,8 +365,18 @@ def test_mock_server_contract_over_http():
         status, audit = call("GET", "/api/audit")
         assert status == 200 and len(audit) == 1
 
-        status, _ = call("GET", "/api/export")
-        assert status == 501
+        # Export serves a real .xlsx (baseline + staged), not the old 501.
+        conn.request("GET", "/api/export")
+        res = conn.getresponse()
+        payload = res.read()
+        assert res.status == 200
+        assert payload[:2] == b"PK"  # zip magic: a real .xlsx
+        assert "MOCK_PLC_ConfigTags.xlsx" in (res.getheader("Content-Disposition") or "")
+        assert "spreadsheetml.sheet" in (res.getheader("Content-Type") or "")
+        import zipfile
+
+        names = zipfile.ZipFile(io.BytesIO(payload)).namelist()
+        assert "xl/workbook.xml" in names and "xl/worksheets/sheet1.xml" in names
         conn.close()
     finally:
         server.shutdown()
@@ -279,6 +436,162 @@ def test_mock_server_get_endpoints_shape(path):
         res = conn.getresponse()
         assert res.status == 200
         json.loads(res.read().decode("utf-8"))
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _multipart_body(boundary: str, filename: str, content: bytes) -> bytes:
+    return (
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).encode("utf-8")
+        + content
+        + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    )
+
+
+def test_mock_server_import_flow_over_http():
+    """Phase 8 import endpoints: upload, scan, confirm, 409, remove."""
+    mock = _load_dev_mock_api()
+    server = mock.ThreadingHTTPServer(("127.0.0.1", 0), mock.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+
+        def call(method, path, body=None, headers=None):
+            hdrs = {"Content-Type": "application/json"}
+            if headers:
+                hdrs.update(headers)
+            conn.request(method, path, body=body, headers=hdrs)
+            res = conn.getresponse()
+            return res.status, json.loads(res.read().decode("utf-8"))
+
+        # Scan proposes the canned P_MyValve and skips the colliding file.
+        status, scan = call("GET", "/api/aois/scan")
+        assert status == 200
+        assert len(scan["proposals"]) == 1
+        proposal = scan["proposals"][0]
+        assert proposal["aoi"] == "P_MyValve"
+        assert proposal["nested_objects"] == ["FullStall"]
+        assert len(proposal["columns"]) == 6
+        for col in proposal["columns"]:
+            assert set(col) >= {"subtag", "type", "description", "default", "selected"}
+            assert col["subtag"].split(".")[-1].startswith("Cfg_")
+        assert scan["skipped"] and scan["skipped"][0]["file"] == "P_AIn.L5X"
+        assert scan["skipped"][0]["reason"]
+
+        # Multipart upload returns the same canned proposal.
+        boundary = "----testboundary"
+        body = _multipart_body(boundary, "P_MyValve.L5X", b"<fake l5x>")
+        status, uploaded = call(
+            "POST",
+            "/api/aois/import",
+            body,
+            {"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        assert status == 200 and uploaded["aoi"] == "P_MyValve"
+        assert uploaded["proposal_id"] == proposal["proposal_id"]
+
+        # Wrong extension is a 400.
+        body = _multipart_body(boundary, "notes.txt", b"nope")
+        status, err = call(
+            "POST",
+            "/api/aois/import",
+            body,
+            {"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        assert status == 400 and "detail" in err
+
+        # Confirm with a subset of columns (drop the last one).
+        selected = [c["subtag"] for c in proposal["columns"][:-1]]
+        status, confirmed = call(
+            "POST",
+            "/api/aois/import/confirm",
+            json.dumps({"proposal_id": proposal["proposal_id"], "selected": selected}),
+        )
+        assert status == 200
+        assert confirmed == {"aoi": "P_MyValve", "columns": 5}
+
+        # The new tab appears in the AOI list, flagged custom, and serves
+        # like a template AOI with the selected columns only.
+        status, aois = call("GET", "/api/aois")
+        assert status == 200
+        mine = next(a for a in aois if a["name"] == "P_MyValve")
+        assert mine["custom"] is True and mine["subtag_count"] == 5
+        assert all(a["custom"] is False for a in aois if a["name"] != "P_MyValve")
+        status, data = call("GET", "/api/aois/P_MyValve")
+        assert status == 200
+        assert [c["subtag"] for c in data["columns"]] == selected
+        assert data["rows"] == []
+
+        # A fresh scan reports the changed export as an update, not a
+        # fresh proposal; confirming it rewrites the AOI in place
+        # (all-or-nothing — the selected list is ignored).
+        status, scan2 = call("GET", "/api/aois/scan")
+        assert status == 200
+        assert scan2["proposals"] == []
+        assert len(scan2["updates"]) == 1
+        update = scan2["updates"][0]
+        assert update["aoi"] == "P_MyValve"
+        assert update["status"] == "update_available"
+        assert update["update_available"] is True
+        # The first confirm dropped .FullStall.Cfg_Severity, so the v2
+        # export re-adds it alongside the new column.
+        assert {c["subtag"] for c in update["diff"]["added"]} == {
+            ".Cfg_NewCol",
+            ".FullStall.Cfg_Severity",
+        }
+        assert [c["subtag"] for c in update["diff"]["removed"]] == [".Cfg_HasOpenLS"]
+        assert [c["subtag"] for c in update["diff"]["changed"]] == [".Cfg_OpenT"]
+        assert update["diff"]["unchanged"] == 3
+        changed = update["diff"]["changed"][0]
+        assert changed["before"]["description"] == "Time to open (sec)"
+        assert changed["after"]["description"] == "Time to fully open (sec)"
+        status, confirmed = call(
+            "POST",
+            "/api/aois/import/confirm",
+            json.dumps(
+                {
+                    "proposal_id": update["proposal_id"],
+                    "selected": selected,
+                }
+            ),
+        )
+        assert status == 200
+        assert confirmed == {"aoi": "P_MyValve", "columns": 6, "updated": True}
+        status, data = call("GET", "/api/aois/P_MyValve")
+        assert status == 200
+        assert [c["subtag"] for c in data["columns"]] == [
+            ".Cfg_Desc",
+            ".Cfg_Label",
+            ".Cfg_OpenT",
+            ".Cfg_NewCol",
+            ".FullStall.Cfg_Exists",
+            ".FullStall.Cfg_Severity",
+        ]
+
+        # Unknown proposal_id is a 404, like the real backend.
+        status, err = call(
+            "POST",
+            "/api/aois/import/confirm",
+            json.dumps({"proposal_id": "nope", "selected": selected}),
+        )
+        assert status == 404 and "unknown proposal_id" in err["detail"]
+
+        # Remove the custom AOI; template AOIs cannot be removed.
+        status, removed = call("DELETE", "/api/aois/custom/P_MyValve")
+        assert status == 200 and removed == {"removed": "P_MyValve"}
+        status, aois = call("GET", "/api/aois")
+        assert all(a["name"] != "P_MyValve" for a in aois)
+        status, err = call("DELETE", "/api/aois/custom/P_MyValve")
+        assert status == 404
+        status, err = call("DELETE", "/api/aois/custom/P_AIn")
+        assert status == 404
         conn.close()
     finally:
         server.shutdown()

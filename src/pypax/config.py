@@ -17,11 +17,12 @@ Three layers, one source of truth each (see PLAN.md section 5):
 
 from __future__ import annotations
 
+import ipaddress
 import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_AOI_VERSION = "4.10.6"
@@ -49,6 +50,33 @@ class AppSettings(BaseSettings):
     real_tolerance: float = 1e-6
     read_back_retries: int = 1
     config_file: str | None = None
+    # Directory scanned for Studio 5000 ``.L5X`` exports to import as
+    # custom AOIs (Phase 8). Relative paths resolve against the repo
+    # root; env override ``PYPAX_AOI_IMPORT_DIR``.
+    aoi_import_dir: str = "aoi_imports"
+    # Directory holding PLC snapshots (Phase 9a): manual snapshots at
+    # the top level, auto-snapshots under ``auto/``. Relative paths
+    # resolve against the repo root; env override
+    # ``PYPAX_SNAPSHOT_DIR``.
+    snapshot_dir: str = "snapshots"
+
+    @field_validator("host")
+    @classmethod
+    def _host_must_be_loopback(cls, value: str) -> str:
+        """The webapp has no authentication and can write to a PLC, so
+        it must only ever listen on loopback. Anything else (0.0.0.0,
+        a LAN address) would silently expose the write API to the
+        network — refuse it at startup instead."""
+        host = value.strip().lower()
+        if host == "localhost":
+            return value
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            raise ValueError(f"host must be a loopback address, got {value!r}")
+        if not address.is_loopback:
+            raise ValueError(f"host must be a loopback address, got {value!r}")
+        return value
 
 
 def load_config_file(path: str | Path) -> dict:

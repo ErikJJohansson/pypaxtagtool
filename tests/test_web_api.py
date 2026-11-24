@@ -39,6 +39,7 @@ def app(workbook, tmp_path):
         plc_factory=lambda commpath: FakePLC(commpath),
         template_path=str(workbook),
         audit_dir=str(tmp_path / "audit"),
+        snapshot_dir=str(tmp_path / "snapshots"),
     )
 
 
@@ -118,7 +119,7 @@ def test_aois_require_connection(client):
 
 def test_list_aois(connected):
     assert connected.get("/api/aois").json() == [
-        {"name": "P_AIn", "instance_count": 2, "subtag_count": 3}
+        {"name": "P_AIn", "instance_count": 2, "subtag_count": 3, "custom": False}
     ]
 
 

@@ -15,7 +15,9 @@ from pathlib import Path
 
 import openpyxl
 
+from ..custom_aoi import load_custom_aois
 from ..layout import DATA_TYPE_ROW, START_COL, get_aoi_list
+from ..l5x import Column as L5xColumn
 from ..plc import get_aoi_tag_instances, make_tag_list, read_plc_row
 from ..spreadsheet import get_subtag_list
 
@@ -76,6 +78,48 @@ def load_template_model(template_path: str | Path) -> dict[str, AoiModel]:
         return model
     finally:
         book.close()
+
+
+def load_combined_model(
+    template_path: str | Path,
+    custom_dir: str | Path | None,
+    column_meta: dict[str, dict[str, L5xColumn]] | None = None,
+) -> tuple[dict[str, AoiModel], set[str]]:
+    """Template AOI model ∪ confirmed custom AOIs.
+
+    Custom AOIs come from ``config/aoi/custom/*.yaml`` (subtag lists
+    only); their column types/descriptions are enriched from
+    ``column_meta`` (``{aoi: {subtag: Column}}``, cached from import
+    proposals) when available, and fall back to empty strings — a
+    custom AOI whose source ``.L5X`` is gone still serves its columns,
+    just untyped. Returns ``(model, custom_names)``. A custom AOI whose
+    name collides with a template sheet never wins: the template entry
+    stands (confirm-time collision checks prevent the collision, this
+    is only a defensive second layer). Raises ``ValueError`` when the
+    custom store is corrupt (e.g. one AOI in two files).
+    """
+    model = load_template_model(template_path)
+    custom_names: set[str] = set()
+    template_lower = {name.lower() for name in model}
+    for aoi, sub_tags in load_custom_aois(custom_dir).items():
+        custom_names.add(aoi)
+        if aoi.lower() in template_lower:
+            continue
+        meta = (column_meta or {}).get(aoi, {})
+        columns = [
+            Column(
+                subtag=sub_tag,
+                data_type=str(meta[sub_tag].data_type)
+                if sub_tag in meta and meta[sub_tag].data_type is not None
+                else "",
+                description=str(meta[sub_tag].description)
+                if sub_tag in meta and meta[sub_tag].description
+                else "",
+            )
+            for sub_tag in sub_tags
+        ]
+        model[aoi] = AoiModel(name=aoi, columns=columns)
+    return model, custom_names
 
 
 def discover_instances(plc, aoi: str) -> list[str]:

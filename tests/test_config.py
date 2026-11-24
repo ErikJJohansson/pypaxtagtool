@@ -35,6 +35,23 @@ def test_env_overrides(monkeypatch):
     assert settings.host == "127.0.0.2"
 
 
+def test_non_loopback_host_rejected(monkeypatch):
+    """The app has no auth and can write to a PLC: 0.0.0.0 / LAN binds
+    must fail fast instead of silently exposing the write API."""
+    from pydantic import ValidationError
+
+    for bad_host in ("0.0.0.0", "192.168.1.10", "example.com"):
+        monkeypatch.setenv("PYPAX_HOST", bad_host)
+        with pytest.raises(ValidationError, match="loopback"):
+            load_app_config()
+        monkeypatch.delenv("PYPAX_HOST")
+    for good_host in ("127.0.0.1", "127.0.0.2", "::1", "localhost"):
+        monkeypatch.setenv("PYPAX_HOST", good_host)
+        settings, _ = load_app_config()
+        assert settings.host == good_host
+        monkeypatch.delenv("PYPAX_HOST")
+
+
 def test_toml_file(tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text(

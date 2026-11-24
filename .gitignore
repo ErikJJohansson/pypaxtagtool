@@ -18,6 +18,12 @@ dist/
 config.toml
 config/plcs/
 
+# L5X import directory (Phase 8): user-supplied Studio 5000 exports
+aoi_imports/
+
+# PLC snapshots (Phase 9a): saved baselines, incl. auto-snapshots
+snapshots/
+
 # logs and write audit logs
 *.log
 audit/

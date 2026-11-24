@@ -6,16 +6,19 @@ that instead of reworking anything: every AOI sheet's subtag list
 (rows 7+8) must equal its ``AOI_definitions.py`` entry, and vice versa.
 
 The one known exception is ``P_StrapTblCfg``: it has a definitions
-entry but no sheet in the template. A second known exception is the
-``P_ValveMO`` spelling below: the template's own description for that
-column ("1=Coasting into LS when stoped changes state...") supports
-the sheet spelling ``.Cfg_CoastToLS`` over the definitions file's
-``.Cfg_CoastTolS``, but with no PLC or Studio 5000 export available
-here that cannot be proven — and the CLI reads subtags from the
-spreadsheet, never from ``AOI_definitions.py``, so the mismatch has
-no runtime effect today. It needs a human check against a real
-P_ValveMO AOI; if confirmed, the one-line fix is in
-``AOI_definitions.py``. Any mismatch beyond the known ones fails.
+entry but no sheet in the template.
+
+Resolved Nov 24, 2026: the ``P_ValveMO`` position-10 spelling
+disagreement (sheet ``.Cfg_CoastToLS`` vs definitions
+``.Cfg_CoastTolS``) was settled against Erik's Studio 5000 export
+``P_ValveMO_4.10.06_AOI.L5X`` (TargetRevision "4.10 .06 Release") —
+the AOI parameter is ``Cfg_CoastToLS`` (also referenced in the AOI
+logic rungs; ``CoastTolS`` appears nowhere in the export), so the
+definitions file was fixed to the sheet spelling. All 82 P_ValveMO
+subtags resolve against the export (parameters + local tags, with the
+``FullStall``/``TransitStall``/``ActuatorFault``/``IOFault`` members
+checked against the nested P_Alarm AOI and ``CmdSrc`` members against
+P_CmdSrc). Any mismatch beyond the known ones fails.
 """
 
 import importlib.util
@@ -27,12 +30,15 @@ import openpyxl
 import pytest
 
 from pypax.aoi import dump_aoi_definitions, load_aoi_definitions
+from pypax.custom_aoi import load_custom_aois, save_custom_aoi
 from pypax.layout import get_aoi_list
+from pypax.l5x import Column
 from pypax.spreadsheet import get_subtag_list
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = REPO_ROOT / "ProcessLibraryOnlineConfigTool.xlsm"
 AOI_YAML = REPO_ROOT / "config" / "aoi" / "v4.10.6.yaml"
+CUSTOM_DIR = REPO_ROOT / "config" / "aoi" / "custom"
 EXTRACTOR = REPO_ROOT / "scripts" / "extract_aoi_definitions.py"
 
 # Spot-checks from the original manual verification (Nov 24, 2026).
@@ -47,9 +53,9 @@ SPOT_CHECK_COUNTS = {
 KNOWN_SHEET_LESS_DEFINITIONS = {"P_StrapTblCfg"}
 
 # Known subtag disagreements: {AOI: {"sheet_only": [...], "defs_only": [...]}}
-KNOWN_MISMATCHES = {
-    "P_ValveMO": {"sheet_only": [".Cfg_CoastToLS"], "defs_only": [".Cfg_CoastTolS"]},
-}
+# Currently none — the P_ValveMO one was resolved Nov 24, 2026 (see the
+# module docstring); the guard stays so any new mismatch fails loudly.
+KNOWN_MISMATCHES = {}
 
 
 def _load_definitions():
@@ -97,12 +103,57 @@ def test_definitions_without_sheets_are_only_the_known_case():
     )
 
 
+def _assert_custom_cfg_leaves(custom):
+    """Every custom AOI column must be a config value (``Cfg_`` leaf)."""
+    for aoi, subtags in custom.items():
+        assert subtags, f"custom AOI {aoi} has no columns"
+        for subtag in subtags:
+            leaf = subtag.lstrip(".").split(".")[-1]
+            assert leaf.startswith("Cfg_"), f"{aoi}: {subtag} is not a config value"
+
+
+def test_custom_aois_need_no_template_sheet():
+    """Custom AOIs (Phase 8) are allowed without a template sheet.
+
+    Every custom YAML entry must parse, its columns must all carry
+    ``Cfg_`` leaves, and no custom AOI may collide with a template
+    sheet name. The checked-in custom directory is empty, so the rule
+    is also exercised on synthetic entries in a temp directory.
+    """
+    custom = load_custom_aois(CUSTOM_DIR)
+    _assert_custom_cfg_leaves(custom)
+    book = openpyxl.load_workbook(TEMPLATE, read_only=True, data_only=True)
+    try:
+        assert not (set(custom) & set(get_aoi_list(book))), (
+            "custom AOI collides with a template sheet: "
+            f"{sorted(set(custom) & set(get_aoi_list(book)))}"
+        )
+    finally:
+        book.close()
+
+
+def test_custom_aoi_cfg_leaf_rule(tmp_path):
+    save_custom_aoi(
+        "P_Good",
+        [Column(".Cfg_Desc", "STRING_40"), Column(".Cfg_Total", "REAL")],
+        "P_Good.L5X",
+        "1.0",
+        path=tmp_path,
+    )
+    loaded = load_custom_aois(tmp_path)
+    assert loaded == {"P_Good": [".Cfg_Desc", ".Cfg_Total"]}
+    _assert_custom_cfg_leaves(loaded)
+    bad = tmp_path / "P_Bad.yaml"
+    bad.write_text("P_Bad:\n  - '.Cfg_Desc'\n  - '.Sts_Opened'\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="not a config value"):
+        _assert_custom_cfg_leaves(load_custom_aois(tmp_path))
+
+
 def test_yaml_matches_spreadsheet_and_definitions():
     """The generated v4.10.6 YAML is the spreadsheet's subtag lists.
 
-    It matches the spreadsheet exactly, and matches AOI_definitions.py
-    except for the known P_ValveMO spelling disagreement; the YAML has
-    no P_StrapTblCfg entry because there is no such sheet.
+    It matches the spreadsheet exactly, and matches AOI_definitions.py;
+    the YAML has no P_StrapTblCfg entry because there is no such sheet.
     """
     yaml_defs = load_aoi_definitions(AOI_YAML)
     definitions = _load_definitions()

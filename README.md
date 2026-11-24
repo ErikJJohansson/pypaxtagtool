@@ -99,7 +99,8 @@ the error and stays disconnected.
 
 ## Using the grid
 
-- **One tab per AOI** (56 in the v4.10.6 library), loaded lazily — a tab's
+- **One tab per AOI** (56 in the v4.10.6 library, plus any custom AOIs
+  you import — see "Custom AOIs (L5X import)"), loaded lazily — a tab's
   data is fetched from the PLC the first time you open it. Columns are the
   AOI's subtags (header shows the subtag and its data type); rows are the
   tag instances, with the tag name pinned in the first column (read-only).
@@ -109,6 +110,11 @@ the error and stays disconnected.
   across instances. Every value is checked against the column's data type
   (from row 6 of the template). Bad values are flagged **red** with a
   reason and are never staged — the cell reverts to the PLC value.
+- **BOOL cells are checkboxes**, not 0/1 text: a ticked box is 1, an
+  empty box is 0. Single-click a BOOL cell to open its checkbox editor
+  and toggle it; typing 0/1/true/false still works too.
+- **String lengths are checked like the spreadsheet flags them** —
+  see "Data validation" below for the per-type limits.
 - **Changed cells** — any cell whose value differs from the last-read PLC
   baseline is highlighted **amber**. The staged-changes panel lists every
   staged change (AOI, instance, subtag, old → new value) and is the source
@@ -123,6 +129,68 @@ the error and stays disconnected.
 Data in the grid comes from the PLC itself, not from the spreadsheet:
 the subtag columns come from the template workbook, and the values are
 the live PLC baseline.
+
+## Data validation
+
+Every value is checked against the column's data type (row 6 of the
+template sheet) **before** it is staged — twice, in two places that
+agree: the grid's `parseValue` in `src/pypax/web/static/app.js` (for
+instant feedback while typing or pasting) and the server's
+`coerce_value` in `src/pypax/web/paste.py` (the authority — direct
+cell edits are staged through the paste endpoint, so they get the same
+check as a pasted block). A value that fails is flagged **red** with a
+reason, the cell reverts to the PLC baseline, and the value is never
+staged or written.
+
+| Data type | Accepted values | Rejected |
+| --- | --- | --- |
+| BOOL | `0`, `1`, `true`, `false` (also `yes`/`no`/`on`/`off` on paste) | anything else — e.g. `2`, `maybe` |
+| SINT / INT / DINT / LINT | whole numbers, optional leading `-` | decimals, text, empty |
+| REAL | any finite number (`90`, `3.5`, `-0.25`) | text, `nan`, `inf` |
+| STRING_* | text up to the type's character limit (below) | text longer than the limit |
+
+String limits, in characters — the same limits the spreadsheet flags:
+
+| Type | Limit | Source |
+| --- | --- | --- |
+| STRING_N (STRING_8, STRING_12, …) | N | UDT definition: DATA SINT[N] |
+| STRING (the Logix type) | 82 | Logix STRING: DATA SINT[82] |
+| STRING_Area | 8 | P_ValveMO 4.10.06 export: DATA SINT[8] |
+| STRING_Cond | 20 | P_Intlk 4.10.06 export: DATA SINT[20] |
+| STRING_NavTag | 20 | P_Intlk 4.10.06 export: DATA SINT[20] |
+
+A longer string is rejected with its limit ("string is 21 characters,
+longer than the 20-character limit for STRING_Cond"). The check exists
+because the PLC would not hold the extra characters either — pycomm3's
+string encoder does no truncation, so without it an over-long string
+would reach the write call unchecked.
+
+**Learning new string sizes.** A custom string UDT is not limited to
+the table above: when a `.L5X` is imported, the app reads the
+`<DataType Family="StringFamily">` blocks of that file and learns
+each type's size from its `DATA` SINT dimension (e.g. a `STRING_Foo`
+with `DATA SINT[33]` holds 33 characters). Learned sizes persist in
+`config/string_udt_sizes.yaml` as `{NAME: {size, source}}` and apply
+in both the grid and the server (`GET /api/string-limits` serves the
+merged map). Teaching a new size is just importing an `.L5X` that
+defines the type — no code change. Two guardrails: a learned size
+that conflicts with a pinned size above (or with the `STRING_N`
+naming rule, or with an earlier learned size for the same type) is
+ignored and reported as a warning in the import response, and a type
+with no known size is kept as text with no length check.
+
+Two special cases:
+
+- **Untyped columns accept nothing.** A custom AOI whose source
+  `.L5X` was deleted from the import folder loses its column types
+  (types come from the cached proposal metadata). With no type the
+  value cannot be validated — and pycomm3 encodes any truthy value as
+  BOOL true — so every paste into such a column is rejected until the
+  `.L5X` is re-imported.
+- **Types the rules don't know** (anything not in the tables above)
+  are kept as text with no length check. If a new string UDT shows up,
+  pin its size in `coerce_value` / `stringLimit` (with the export it
+  came from, as above) and add a test in `tests/test_web_paste.py`.
 
 ## Writing to the PLC
 
@@ -148,9 +216,98 @@ in Studio 5000, check the audit log for what was actually sent, and see
 Writes are also protected by a single-connection lock: one PLC connection
 at a time, no parallel writes to the same PLC.
 
+## PLC snapshots
+
+A snapshot is the PLC baseline for every AOI (template + custom) at
+one moment, saved as a JSON file
+(`pypax-snapshot/1`: PLC name, timestamp, AOI version, all values).
+Snapshots live in `snapshots/` (gitignored; override with
+`PYPAX_SNAPSHOT_DIR`).
+
+- **Save:** the **Snapshots** panel's **Save snapshot…** asks for a
+  name (`[A-Za-z0-9_-]+`) and stores it; without a name it is saved
+  as `<plc>_<YYYYMMDD-HHMMSS>.json`. A name that already exists is
+  refused — a named snapshot is never silently overwritten.
+- **Auto-snapshot before every write:** each write first captures
+  the pre-write baseline to `snapshots/auto/` — freshly re-read from
+  the PLC, so a value that drifted since a tab was loaded is captured
+  as it was before the write — so any write can be rolled back from
+  its own snapshot. The newest 10 auto-snapshots per PLC are kept;
+  older ones are pruned. A failed auto-snapshot never blocks the
+  write — it is logged, recorded in the audit entry, and reported in
+  the write response.
+- **Compare:** pick a snapshot and click **Compare** — the diff table
+  shows every tag that differs from the live PLC (snapshot value vs
+  current value), including tags that vanished or appeared since the
+  snapshot.
+- **Restore:** **Restore** stages the snapshot's differing values
+  through the same validation as a paste (bad values are skipped with
+  a reason, never staged). Restore only stages — nothing is written
+  until you go through the normal write confirmation. A snapshot for
+  another PLC is refused.
+- **Download / delete:** download any snapshot as its `.json` file;
+  a snapshot file from another machine can be uploaded back via
+  `POST /api/snapshots/upload` (`.json` only, 5 MB cap, PLC name must
+  match the connected PLC).
+
 ## Export to spreadsheet
 
-**Export .xlsx** downloads `<plc_name>_ConfigTags.xlsx` in the exact template layout (headers rows 4–9, instances from row 10, Setup sheet counts), with baseline values from the PLC and staged changes applied on top, highlighted amber. The exported file works with the legacy CLI below and vice versa — that round-trip is the point. When disconnected, the template is exported as-is under the fallback name `PyPax_ConfigTags.xlsx`.
+**Export .xlsx** downloads `<plc_name>_ConfigTags.xlsx` in the exact template layout (headers rows 4–9, instances from row 10, Setup sheet counts), with baseline values from the PLC and staged changes applied on top, highlighted amber. The exported file works with the legacy CLI below and vice versa — that round-trip is the point. When disconnected, the template is exported as-is under the fallback name `PyPax_ConfigTags.xlsx`. Export covers the template AOIs only. Custom AOIs are not exported —
+a custom AOI requires its logic (in Studio 5000), and the export
+would only carry its data, so the spreadsheet round-trip doesn't
+apply to them.
+
+## Custom AOIs (L5X import)
+
+The webapp can learn AOIs the template doesn't have, straight from a
+Studio 5000 `.L5X` export. It never executes the file — the export is
+parsed as XML.
+
+- **Two ways in:** click **Import AOI** and pick a `.L5X` file (5 MB
+  cap), or drop `.L5X` files into the `aoi_imports/` folder (override with
+  `PYPAX_AOI_IMPORT_DIR`) and click **Scan folder**. Scanned files are
+  proposed, never auto-confirmed.
+- **Propose, then confirm:** the proposal shows the AOI name, its
+  revision, the nested sub-objects it found (e.g. alarm members under
+  `FullStall`), and every candidate column with its type, description,
+  and default — each with a checkbox. Only columns you tick are imported.
+  Which columns are candidates is decided by the curation rule: a column
+  is a config value when its leaf name starts with `Cfg_` (top-level
+  alarm pass-throughs like `Cfg_FullStallSeverity` map to the nested
+  member `FullStall.Cfg_Severity`). Non-`Cfg_` members (inputs, outputs,
+  status) are never offered.
+- **After confirm** the AOI gets its own tab with a `custom` badge and
+  behaves exactly like a template AOI: same grid, same paste validation,
+  same write path (PLC-name check, typed confirmation, chunked writes,
+  per-tag read-back verification). Its definition is stored in
+  `config/aoi/custom/<AOI>.yaml`.
+- **Re-import in place:** to update an imported AOI, upload the new
+  `.L5X` export (or drop it into the import folder and click **Scan
+  folder**) — the app answers with a diff instead of a fresh proposal:
+  columns added (green), removed (red), and changed (old → new for
+  type, description, or default). **Update AOI** rewrites
+  `config/aoi/custom/<AOI>.yaml` in place; it is all-or-nothing, with
+  no column checkboxes. The folder scan spots a changed export by
+  comparing the SHA-256 stored in the YAML header at confirm time
+  against the file on disk, and shows "Update available" on it. An
+  update is refused (409) while staged changes exist on that AOI —
+  discard or write them first, so a re-import never silently drops
+  an edit. The confirmed column details (type, description, default)
+  are also stored next to the YAML in
+  `config/aoi/custom/<AOI>.meta.json`, so the diff still works after
+  a restart or after the source `.L5X` is deleted; for an AOI imported
+  before that file existed the diff can only show added/removed
+  columns and says so.
+- **Remove:** the toolbar's **Remove custom AOI** button deletes a custom
+  AOI (template AOIs can't be removed).
+- **Limits:** a template workbook is still required (the app won't serve
+  custom AOIs without one); column types and descriptions come from the
+  source `.L5X` kept in the import folder, so if that file is deleted
+  the columns become untyped and pastes into them are rejected until
+  the `.L5X` is re-imported (the app cannot validate a value it cannot
+  type, and an unvalidated BOOL write would land as true). Real
+  Rockwell exports are test fixtures only and must never be committed
+  — tests use synthetic `.L5X` files.
 
 ## The legacy CLI
 
@@ -222,7 +379,7 @@ PYPAX_CONFIG_FILE=config.toml PYPAX_PORT=8001 pypax-web
 ## Development
 
 ```bash
-.venv/bin/python -m pytest -q        # full suite (168 tests at Phase 5)
+.venv/bin/python -m pytest -q        # full suite (218 tests after Phase 8)
 .venv/bin/ruff check src tests scripts
 .venv/bin/ruff format --check src tests scripts
 ```
@@ -251,12 +408,15 @@ PYPAX_CONFIG_FILE=config.toml PYPAX_PORT=8001 pypax-web
 - **No live PLC has been tested against yet.** Everything is fake-PLC
   tested. First live contact must follow `docs/SMOKE_TEST.md`
   (read-only first, then one harmless single-tag write).
-- **`P_ValveMO` spelling discrepancy:** the template sheet has
-  `.Cfg_CoastToLS` at position 10 while `AOI_definitions.py` has
-  `.Cfg_CoastTolS`. Recorded as a known exception in the audit test;
-  neither file has been changed. It needs a check against a real
-  P_ValveMO in Studio 5000 (see the smoke-test checklist).
+- **`P_ValveMO` spelling (resolved Nov 24, 2026):** the template
+  sheet's `.Cfg_CoastToLS` was confirmed correct against Erik's
+  Studio 5000 `P_ValveMO_4.10.06_AOI.L5X` export; `AOI_definitions.py`
+  had the typo (`.Cfg_CoastTolS`) and was fixed. All 82 P_ValveMO
+  subtags now match across spreadsheet, definitions, and YAML.
 - **SpotConfigTool.xlsm is out of scope** and ignored.
+- **Custom AOIs:** re-import updates in place (see "Custom AOIs (L5X
+  import)"); the folder scan skips already-imported AOIs whose file
+  is unchanged, and export covers template AOIs only.
 - **No lock file yet** — dependencies are exact pins in `pyproject.toml`
   / `requirements.txt`.
 - The `python -m pypax.web` repo-root launch caveat above.

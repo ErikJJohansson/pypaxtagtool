@@ -40,6 +40,7 @@ def app(workbook, audit_dir):
         plc_factory=lambda commpath: FakePLC(commpath),
         template_path=str(workbook),
         audit_dir=str(audit_dir),
+        snapshot_dir=str(audit_dir.parent / "snapshots"),
     )
 
 
