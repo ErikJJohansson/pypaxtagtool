@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PyPaxTagTool — PlantPAX Tag Configuration</title>
+  <!-- AG Grid Community 32.3.0, vendored locally (see vendor/README.md). No CDN. -->
+  <link rel="stylesheet" href="vendor/ag-grid.css">
+  <link rel="stylesheet" href="vendor/ag-theme-quartz.css">
+  <link rel="stylesheet" href="styles.css">
+  <script src="vendor/ag-grid-community.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="title-block">
+      <h1>PyPaxTagTool</h1>
+      <span class="subtitle">PlantPAX tag configuration — webapp</span>
+      <span id="mock-badge" class="mock-badge" hidden>MOCK MODE (?mock=1) — no PLC</span>
+    </div>
+    <div id="plc-banner" class="plc-banner disconnected">
+      <span id="conn-dot" class="conn-dot"></span>
+      <span id="conn-status">Disconnected</span>
+      <span id="plc-name" class="plc-name"></span>
+      <span id="plc-commpath" class="plc-commpath"></span>
+    </div>
+  </header>
+
+  <section class="connect-bar" aria-label="PLC connection">
+    <label>
+      PLC comm path
+      <input id="commpath" type="text" placeholder="10.10.17.10/4" autocomplete="off">
+    </label>
+    <label>
+      Profile
+      <input id="profile" type="text" placeholder="default" autocomplete="off">
+    </label>
+    <button id="connect-btn" type="button">Connect</button>
+    <button id="disconnect-btn" type="button" disabled>Disconnect</button>
+    <span id="connect-error" class="error-text" role="alert"></span>
+  </section>
+
+  <main>
+    <div id="not-connected-note" class="notice">
+      Connect to a PLC to load the AOI tabs. Or open with
+      <code>?mock=1</code> to try the UI with canned data and no PLC.
+    </div>
+
+    <nav id="tab-bar" class="tab-bar" aria-label="AOI tabs" hidden></nav>
+
+    <div id="grid-wrap" class="grid-wrap" hidden>
+      <div class="grid-toolbar">
+        <span id="grid-title" class="grid-title"></span>
+        <span id="grid-status" class="grid-status" role="status"></span>
+      </div>
+      <div id="grid" class="ag-theme-quartz"></div>
+      <p class="hint">
+        Click a cell to edit it. Paste a block copied from Excel/Numbers with
+        Ctrl/Cmd+V — the top-left of the paste lands on the focused cell.
+        Amber = changed vs the PLC value. Red = rejected (see the reason in the
+        tooltip) — rejected values are never staged.
+      </p>
+    </div>
+
+    <section class="panels">
+      <div class="panel" id="staged-panel">
+        <h2>Staged changes <span id="staged-count" class="count-badge">0</span></h2>
+        <ul id="staged-list" class="staged-list">
+          <li class="empty">No staged changes.</li>
+        </ul>
+        <div class="panel-actions">
+          <button id="refresh-staged-btn" type="button">Refresh</button>
+          <button id="clear-highlight-btn" type="button"
+                  title="Clears the amber/red highlighting in this browser. Staged changes live on the server until written — there is no discard endpoint yet.">
+            Clear highlighting
+          </button>
+        </div>
+      </div>
+
+      <div class="panel" id="write-panel">
+        <h2>Write to PLC</h2>
+        <p>Only staged changes are written. Every written tag is read back by
+           the backend before it counts as done (Phase 5).</p>
+        <div class="panel-actions">
+          <button id="write-btn" type="button" disabled>Write staged changes…</button>
+          <button id="export-btn" type="button" disabled
+                  title="Export to spreadsheet — coming in Phase 6">Export .xlsx (coming in Phase 6)</button>
+        </div>
+        <div id="write-results" class="write-results" hidden></div>
+      </div>
+
+      <div class="panel" id="audit-panel">
+        <h2>Write audit log</h2>
+        <button id="refresh-audit-btn" type="button">Refresh</button>
+        <ul id="audit-list" class="audit-list">
+          <li class="empty">No writes recorded yet.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <!-- Write confirmation modal -->
+  <div id="write-modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="write-modal-title">
+      <h2 id="write-modal-title">Confirm write to PLC</h2>
+      <p>You are about to write to PLC
+        <strong id="modal-plc-name"></strong>
+        (<span id="modal-commpath"></span>).</p>
+      <ul id="modal-counts" class="modal-counts"></ul>
+      <p class="warning">Double-check the PLC name — writes go to the PLC shown
+        above, and only to that PLC.</p>
+      <label>
+        Type the PLC name to confirm
+        <input id="confirm-plc-input" type="text" autocomplete="off"
+               placeholder="PLC name">
+      </label>
+      <p id="modal-error" class="error-text" role="alert"></p>
+      <div class="modal-actions">
+        <button id="modal-cancel-btn" type="button">Cancel</button>
+        <button id="modal-confirm-btn" type="button" disabled>Write to PLC</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="app-footer">
+    PyPaxTagTool webapp — local only. Spreadsheet workflow unchanged:
+    the CLI (<code>pypax.py</code>) reads and writes the same files.
+  </footer>
+</body>
+</html>
