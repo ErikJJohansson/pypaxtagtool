@@ -7,6 +7,8 @@ built in-test — never a real Rockwell file.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -314,6 +316,10 @@ def test_scan_needs_no_connection(client, tmp_path):
     assert client.get("/api/aois/scan").status_code == 200
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows filenames cannot contain newlines, so a file like this can never exist in a scan dir there; the header sanitiser itself is covered on every platform by test_save_sanitizes_newlines_in_header_fields",
+)
 def test_scan_filename_with_newlines_cannot_inject_aoi(client, tmp_path):
     """A scan-dir file whose name contains newlines must not smuggle an AOI.
 

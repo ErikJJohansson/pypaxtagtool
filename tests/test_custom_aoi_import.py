@@ -290,6 +290,31 @@ def test_upload_with_colliding_filename_but_different_aoi_is_refused(client, tmp
     assert again.json()["status"] == "update_available"
 
 
+def test_upload_target_allows_same_aoi_spelled_in_a_different_case(tmp_path):
+    """A differently-cased spelling of the same AOI is not a collision.
+
+    On a case-insensitive filesystem a re-uploaded file IS the existing
+    file: ``p_testvalve.L5X`` resolves to the stored ``P_TestValve.L5X``,
+    so the collision check sees the stored AOI ``P_TestValve`` against
+    the upload's ``p_testvalve``. ControlLogix names are
+    case-insensitive, so that is the same AOI and the upload must be
+    allowed — the case-sensitive comparison returned 400 here, and the
+    re-import tests then failed on macOS/Windows with
+    ``KeyError: 'status'`` (the 400 body has no ``status`` key). The
+    first call reproduces that on Linux: same file on disk, AOI name
+    spelled in a different case.
+    """
+    from pypax.web.import_aoi import check_upload_target
+
+    imports = tmp_path / "imports"
+    imports.mkdir()
+    (imports / "P_TestValve.L5X").write_text(_l5x("P_TestValve", V1_MEMBERS), encoding="utf-8")
+    check_upload_target(imports, "P_TestValve.L5X", "p_testvalve")
+    # A genuinely different AOI under the same filename is still refused.
+    with pytest.raises(ValueError, match="different AOI"):
+        check_upload_target(imports, "P_TestValve.L5X", "P_Other")
+
+
 def test_confirm_update_rewrites_yaml(client, tmp_path):
     _import_v1(client)
     yaml_path = tmp_path / "custom" / "P_TestValve.yaml"

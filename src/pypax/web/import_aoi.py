@@ -195,7 +195,11 @@ def check_upload_target(import_dir: str | Path, filename: str, aoi_name: str) ->
     so overwriting a file that holds another AOI's export would
     destroy it with no way back. A file holding the same AOI is a
     re-import and is allowed; an unparseable file (or one over the
-    import cap) is not a usable export and may be replaced. Raises
+    import cap) is not a usable export and may be replaced. ControlLogix
+    names are case-insensitive, so the comparison is too: on a
+    case-insensitive filesystem a re-upload spelled ``p_foo.L5X``
+    resolves to the existing ``P_Foo.L5X`` file, and refusing it would
+    break every differently-cased re-import on macOS/Windows. Raises
     ``ValueError``.
     """
     base = Path(filename or "").name
@@ -210,7 +214,7 @@ def check_upload_target(import_dir: str | Path, filename: str, aoi_name: str) ->
         existing = parse_l5x(target)
     except (ValueError, OSError):
         return
-    if existing.name != aoi_name:
+    if existing.name.lower() != aoi_name.lower():
         raise ValueError(
             f"upload {base!r} holds AOI {aoi_name!r} but the file already "
             f"holds a different AOI {existing.name!r}; rename the upload "
