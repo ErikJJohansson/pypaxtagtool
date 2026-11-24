@@ -129,6 +129,9 @@ const HttpApi = {
   getChanges() {
     return this.request('/api/changes');
   },
+  discardChanges() {
+    return this.request('/api/changes', { method: 'DELETE' });
+  },
   write(plcName) {
     return this.request('/api/write', {
       method: 'POST',
@@ -274,6 +277,11 @@ const MockApi = {
   },
   async getChanges() {
     return JSON.parse(JSON.stringify(this._staged));
+  },
+  async discardChanges() {
+    const discarded = this._staged.length;
+    this._staged = [];
+    return { discarded };
   },
   async write(plcName) {
     if (plcName !== MOCK_DATA.plcName) {
@@ -774,13 +782,21 @@ function init() {
   $('disconnect-btn').addEventListener('click', disconnect);
   $('refresh-staged-btn').addEventListener('click', refreshStaged);
   $('clear-highlight-btn').addEventListener('click', async () => {
-    // No discard endpoint exists in the contract: this only clears the
-    // local amber/red highlighting, then re-syncs from the server.
+    // Discard all staged changes on the server, then clear the local
+    // amber/red highlighting and re-sync from the server.
+    let discarded = 0;
+    try {
+      const res = await api.discardChanges();
+      discarded = res.discarded || 0;
+    } catch (err) {
+      showStatus('Could not discard staged changes: ' + err.message);
+      return;
+    }
     state.changedCells.clear();
     state.rejectedCells.clear();
     if (gridApi) gridApi.refreshCells({ force: true });
     await refreshStaged();
-    showStatus('Local highlighting cleared. Staged changes still live on the server.');
+    showStatus('Discarded ' + discarded + ' staged change(s).');
   });
   $('write-btn').addEventListener('click', openWriteModal);
   $('export-btn').addEventListener('click', () => {

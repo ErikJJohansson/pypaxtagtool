@@ -80,6 +80,12 @@ Three layers, one source of truth each; real values never committed.
 
 ## 6. Phases (small commits, one chunk each)
 
+Status (2026-11-24): Phases 0–5 done and merged into `feature/webapp`
+(168 tests passing). Phase 6 (spreadsheet round-trip / export) in progress
+in parallel. Phase 7 (this work — docs + handover) in progress.
+`main` untouched at `b76db34` — nothing merges to main without Erik's
+explicit say-so.
+
 - Phase 0 — Scaffolding. Branch `feature/webapp`; pytest + GitHub Actions CI
   (test matrix: macOS + Windows + Linux). NOTE (2026-11-24): the Muse GitHub App
   has no Workflows permission, so `.github/workflows/ci.yml` cannot be pushed via

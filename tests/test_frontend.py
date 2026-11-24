@@ -220,6 +220,47 @@ def test_mock_server_contract_over_http():
         server.server_close()
 
 
+def test_mock_server_discard_changes():
+    mock = _load_dev_mock_api()
+    server = mock.ThreadingHTTPServer(("127.0.0.1", 0), mock.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+
+        def call(method, path, body=None):
+            conn.request(
+                method,
+                path,
+                body=json.dumps(body) if body is not None else None,
+                headers={"Content-Type": "application/json"},
+            )
+            res = conn.getresponse()
+            return res.status, json.loads(res.read().decode("utf-8"))
+
+        # Stage a change, then discard it via DELETE /api/changes.
+        status, body = call(
+            "POST",
+            "/api/aois/P_AIn/paste",
+            {"tsv": "95", "anchor_instance": "FIT-101", "anchor_subtag": ".Cfg_HiLim"},
+        )
+        assert status == 200 and len(body["applied"]) == 1
+
+        status, body = call("DELETE", "/api/changes")
+        assert status == 200 and body == {"discarded": 1}
+
+        status, changes = call("GET", "/api/changes")
+        assert status == 200 and changes == []
+
+        # Discarding with nothing staged is a no-op, not an error.
+        status, body = call("DELETE", "/api/changes")
+        assert status == 200 and body == {"discarded": 0}
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 @pytest.mark.parametrize("path", ["/api/health", "/api/aois", "/api/changes", "/api/audit"])
 def test_mock_server_get_endpoints_shape(path):
     mock = _load_dev_mock_api()

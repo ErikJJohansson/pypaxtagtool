@@ -364,6 +364,16 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send_json(404, {"detail": "not found"})
 
+    def do_DELETE(self) -> None:  # noqa: N802 - stdlib handler name
+        path = self.path.split("?", 1)[0]
+        with STATE.lock:
+            if path == "/api/changes":
+                discarded = len(STATE.staged)
+                STATE.staged = []
+                self._send_json(200, {"discarded": discarded})
+            else:
+                self._send_json(404, {"detail": "not found"})
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Dev mock API server for the PyPaxTagTool web UI.")
