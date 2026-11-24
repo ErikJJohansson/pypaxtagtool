@@ -4,3 +4,20 @@
 
 # generic
 .DS_Store
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# local config — never commit PLC/site details (this repo is public)
+config.toml
+config/plcs/
+
+# logs and write audit logs
+*.log
+audit/
