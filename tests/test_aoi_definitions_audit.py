@@ -19,15 +19,21 @@ P_ValveMO AOI; if confirmed, the one-line fix is in
 """
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import openpyxl
+import pytest
 
+from pypax.aoi import dump_aoi_definitions, load_aoi_definitions
 from pypax.layout import get_aoi_list
 from pypax.spreadsheet import get_subtag_list
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = REPO_ROOT / "ProcessLibraryOnlineConfigTool.xlsm"
+AOI_YAML = REPO_ROOT / "config" / "aoi" / "v4.10.6.yaml"
+EXTRACTOR = REPO_ROOT / "scripts" / "extract_aoi_definitions.py"
 
 # Spot-checks from the original manual verification (Nov 24, 2026).
 SPOT_CHECK_COUNTS = {
@@ -89,3 +95,70 @@ def test_definitions_without_sheets_are_only_the_known_case():
     assert sheetless == KNOWN_SHEET_LESS_DEFINITIONS, (
         f"unexpected definitions without sheets: {sheetless - KNOWN_SHEET_LESS_DEFINITIONS}"
     )
+
+
+def test_yaml_matches_spreadsheet_and_definitions():
+    """The generated v4.10.6 YAML is the spreadsheet's subtag lists.
+
+    It matches the spreadsheet exactly, and matches AOI_definitions.py
+    except for the known P_ValveMO spelling disagreement; the YAML has
+    no P_StrapTblCfg entry because there is no such sheet.
+    """
+    yaml_defs = load_aoi_definitions(AOI_YAML)
+    definitions = _load_definitions()
+    book = openpyxl.load_workbook(TEMPLATE, read_only=True, data_only=True)
+    try:
+        aoi_sheets = get_aoi_list(book)
+        assert set(yaml_defs) == set(aoi_sheets)
+        for aoi in aoi_sheets:
+            assert yaml_defs[aoi] == get_subtag_list(book[aoi]), f"{aoi} YAML != spreadsheet"
+    finally:
+        book.close()
+    assert "P_StrapTblCfg" not in yaml_defs
+    mismatches = {}
+    for aoi, yaml_subtags in yaml_defs.items():
+        if yaml_subtags != definitions[aoi]:
+            mismatches[aoi] = {
+                "sheet_only": sorted(set(yaml_subtags) - set(definitions[aoi])),
+                "defs_only": sorted(set(definitions[aoi]) - set(yaml_subtags)),
+            }
+    assert mismatches == KNOWN_MISMATCHES, f"unexpected YAML vs definitions diffs: {mismatches}"
+
+
+def test_extractor_regenerates_the_checked_in_yaml(tmp_path):
+    """Running the extractor reproduces the checked-in file byte for byte."""
+    regenerated = tmp_path / "v4.10.6.yaml"
+    result = subprocess.run(
+        [sys.executable, str(EXTRACTOR), "--output", str(regenerated)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert regenerated.read_text(encoding="utf-8") == AOI_YAML.read_text(encoding="utf-8")
+
+
+def test_aoi_yaml_round_trip(tmp_path):
+    loaded = load_aoi_definitions(AOI_YAML)
+    assert len(loaded) == 56
+    assert len(loaded["P_AIn"]) == 101
+    rewritten = tmp_path / "roundtrip.yaml"
+    dump_aoi_definitions(loaded, rewritten)
+    assert load_aoi_definitions(rewritten) == loaded
+    assert rewritten.read_text(encoding="utf-8") == AOI_YAML.read_text(encoding="utf-8")
+
+
+def test_aoi_yaml_loader_rejects_bad_shapes(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("P_AIn:\n  - '.Cfg_Desc'\nP_AIn:\n  - '.Cfg_HiLim'\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate"):
+        load_aoi_definitions(bad)
+    bad.write_text("not a mapping\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_aoi_definitions(bad)
+    bad.write_text("P_AIn:\n  - .Cfg_Desc\n", encoding="utf-8")
+    # Plain (unquoted) scalars are valid YAML and load fine.
+    assert load_aoi_definitions(bad) == {"P_AIn": [".Cfg_Desc"]}
+    bad.write_text("P_AIn:\n  - 42\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="list of subtag strings"):
+        load_aoi_definitions(bad)

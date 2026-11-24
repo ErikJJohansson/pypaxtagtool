@@ -1,0 +1,29 @@
+# Example configuration for the PyPaxTagTool webapp.
+#
+# Copy to config.toml (gitignored) or config/plcs/<name>.toml and fill in
+# real values. NEVER commit real PLC addresses or PLC names — this repo is
+# public. The values below are placeholders (TEST-NET addresses, fake names).
+
+# [app]
+# Path to the PlantPAX template workbook. Defaults to
+# ProcessLibraryOnlineConfigTool.xlsm in the working directory.
+# template_path = "ProcessLibraryOnlineConfigTool.xlsm"
+# host = "127.0.0.1"
+# port = 8000
+# write_chunk_size = 100
+# real_tolerance = 0.000001
+# read_back_retries = 1
+
+[[profiles]]
+name = "example-test-plc"
+commpath = "192.0.2.10/0"
+expected_plc_name = "EXAMPLE_PLC"
+aoi_version = "4.10.6"
+safety_level = "test"
+
+[[profiles]]
+name = "example-production-plc"
+commpath = "192.0.2.20/0"
+expected_plc_name = "EXAMPLE_PROD_PLC"
+aoi_version = "4.10.6"
+safety_level = "production"

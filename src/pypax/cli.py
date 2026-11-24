@@ -26,6 +26,7 @@ from .plc import (
     get_aoi_tag_instances,
     get_failed_tags,
     make_tag_list,
+    read_aoi_instances,
     read_plc_row,
     write_plc_row,
 )
@@ -127,12 +128,14 @@ def main():
 
                 failed_read_tags = []
 
-                # read rows, write to spreadsheet
-                for i in tqdm(range(num_instances), "Reading instances of " + aoi):
-                    tag_list = make_tag_list(base_tags[i], sub_tags)
+                # Read all instances of this AOI in chunked bulk reads
+                # (<=100 tags per request) instead of one request per row.
+                rows = read_aoi_instances(plc, base_tags, sub_tags)
 
-                    # data for one tag and all sub tags
-                    tag_data, read_result = read_plc_row(plc, tag_list)
+                # write rows to spreadsheet
+                for i in tqdm(range(num_instances), "Reading instances of " + aoi):
+                    tag_data, read_result = rows[i]
+                    tag_list = make_tag_list(base_tags[i], sub_tags)
 
                     # add to failed tags list if we can't find the tag
                     if not all(read_result):

@@ -7,11 +7,10 @@ code first and must keep passing unchanged through the whole Phase 1
 refactor — if it goes red, behaviour changed.
 
 Note on the fake: a real pycomm3 ``LogixDriver.tags`` holds base instance
-tags (``FIT_101`` with ``data_type_name == "P_AIn"``), while the Phase 0
-FakePLC seeds one entry per *subtag*. The fixture below overrides
-``fake.tags`` with base-instance entries, which is the real-driver shape
-``get_aoi_tag_instances`` relies on; reads/writes still go through the
-seeded subtag values.
+tags (``FIT_101`` with ``data_type_name == "P_AIn"``), and the FakePLC
+now seeds those base entries alongside its per-member entries, so
+``get_aoi_tag_instances`` works against the fake with no override.
+Reads/writes still go through the seeded member values.
 """
 
 import sys
@@ -24,17 +23,10 @@ from fakes.fake_plc import FakePLC
 from helpers import SUBTAG_NAMES, build_workbook
 from pypax.cli import main as cli_main
 
-BASE_INSTANCE_TAGS = {
-    "FIT_101": {"data_type_name": "P_AIn", "dim": 0, "dimensions": [0, 0, 0], "alias": False},
-    "PIT_201": {"data_type_name": "P_AIn", "dim": 0, "dimensions": [0, 0, 0], "alias": False},
-    "XIC_301": {"data_type_name": "P_DIn", "dim": 0, "dimensions": [0, 0, 0], "alias": False},
-}
-
 
 @pytest.fixture
 def fake(monkeypatch, tmp_path):
     plc = FakePLC(commpath="10.0.0.1/0", plc_name="TestPLC")
-    plc.tags = dict(BASE_INSTANCE_TAGS)
     plc.open()
     monkeypatch.chdir(tmp_path)
     # cli.main() builds LogixDriver(commpath, init_tags=..., ...); hand it the fake.

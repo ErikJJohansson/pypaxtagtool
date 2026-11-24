@@ -130,11 +130,15 @@ def test_write_log_records_writes_in_order(plc):
 
 
 def test_tags_dict_supports_aoi_discovery_by_data_type(plc):
+    # Phase 2: tags holds base-instance entries (the real-driver shape)
+    # alongside the seeded member entries, so both appear here.
     p_ain = sorted(
         name for name, definition in plc.tags.items() if definition["data_type_name"] == "P_AIn"
     )
     assert p_ain == sorted(
         [
+            "FIT_101",
+            "PIT_201",
             "FIT_101.Cfg_Desc",
             "FIT_101.Cfg_Label",
             "FIT_101.Cfg_Tag",
@@ -175,3 +179,44 @@ def test_read_and_write_require_open_connection():
         fake.read("FIT_101.Cfg_HiLim")
     with pytest.raises(RuntimeError):
         fake.write(("FIT_101.Cfg_HiLim", 1.0))
+
+
+def test_read_log_records_one_entry_per_read_call(plc):
+    plc.read("FIT_101.Cfg_HiLim")
+    plc.read("FIT_101.Cfg_HiLim", "PIT_201.Cfg_HiLim")
+    assert plc.read_log == [
+        ("FIT_101.Cfg_HiLim",),
+        ("FIT_101.Cfg_HiLim", "PIT_201.Cfg_HiLim"),
+    ]
+
+
+def test_write_calls_records_one_entry_per_write_call(plc):
+    plc.write(("FIT_101.Cfg_HiLim", 1.0))
+    plc.write(("FIT_101.Cfg_HiLim", 2.0), ("PIT_201.Cfg_HiLim", 3.0))
+    assert plc.write_calls == [
+        (("FIT_101.Cfg_HiLim", 1.0),),
+        (("FIT_101.Cfg_HiLim", 2.0), ("PIT_201.Cfg_HiLim", 3.0)),
+    ]
+
+
+def test_add_instance_seeds_base_and_member_tags(plc):
+    plc.add_instance(
+        "TT_999",
+        "P_AIn",
+        [(".Cfg_Desc", "STRING", "Test transmitter"), (".Cfg_HiLim", "REAL", 50.0)],
+    )
+    assert plc.tags["TT_999"]["data_type_name"] == "P_AIn"
+    assert plc.read("TT_999.Cfg_Desc").value == "Test transmitter"
+    assert plc.read("TT_999.Cfg_HiLim").value == 50.0
+
+
+def test_reset_clears_call_logs_and_added_instances(plc):
+    plc.add_instance("TT_999", "P_AIn", [(".Cfg_HiLim", "REAL", 50.0)])
+    plc.read("FIT_101.Cfg_HiLim")
+    plc.write(("FIT_101.Cfg_HiLim", 1.0))
+    plc.reset()
+    assert plc.read_log == []
+    assert plc.write_calls == []
+    assert plc.write_log == []
+    assert "TT_999" not in plc.tags
+    assert plc.read("FIT_101.Cfg_HiLim").value == 90.0

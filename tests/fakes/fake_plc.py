@@ -17,6 +17,16 @@ identically on macOS, Windows, and Linux.
 
 Seeded with two realistic ``P_AIn`` (analog input) instances plus one
 ``P_DIn`` instance, so AOI discovery by ``data_type_name`` can be tested.
+
+``tags`` mirrors a real ``LogixDriver.tags`` in shape but is two-tier:
+base-instance entries (``FIT_101`` with ``data_type_name == "P_AIn"``,
+the real-driver shape) alongside one entry per seeded member value
+(``FIT_101.Cfg_HiLim`` ...). A real tags dict never contains member
+paths; the fake keeps them because its ``tags`` dict doubles as the
+value store — so discovery (``get_aoi_tag_instances``) must ignore
+member paths (names containing ``.``). ``read_log`` / ``write_calls``
+record one entry per ``read()`` / ``write()`` call so tests can assert
+batching/chunking behaviour.
 """
 
 from __future__ import annotations
@@ -103,6 +113,16 @@ def _data_type_name(tag_name):
     return "UNKNOWN"
 
 
+# Base instances seeded by _SEED_TAGS, in discovery order. A real
+# LogixDriver.tags holds exactly these (base tag -> AOI type); the fake
+# additionally holds one entry per seeded member value below.
+_BASE_INSTANCES = {
+    "FIT_101": "P_AIn",
+    "PIT_201": "P_AIn",
+    "XIC_301": "P_DIn",
+}
+
+
 class FakePLC:
     """In-memory LogixDriver stand-in. No network, no hardware."""
 
@@ -110,20 +130,63 @@ class FakePLC:
         self.commpath = commpath
         self._plc_name = plc_name
         self._open = False
+        self._reset_state()
+
+    def _reset_state(self):
+        """(Re)build seed values, types, and tags; clear the call logs."""
         self._values = {name: value for name, _type, value in _SEED_TAGS}
         self._types = {name: type_ for name, type_, _value in _SEED_TAGS}
         self.tags = {
             name: {
-                "data_type_name": _data_type_name(name),
+                "data_type_name": aoi_type,
                 "dim": 0,
                 "dimensions": [0, 0, 0],
                 "alias": False,
             }
-            for name in self._values
+            for name, aoi_type in _BASE_INSTANCES.items()
         }
+        self.tags.update(
+            {
+                name: {
+                    "data_type_name": _data_type_name(name),
+                    "dim": 0,
+                    "dimensions": [0, 0, 0],
+                    "alias": False,
+                }
+                for name in self._values
+            }
+        )
         # Every write, in order, as (tag, value) — lets tests assert
         # batching/chunking behaviour without a real PLC.
         self.write_log = []
+        # One entry per read() call: the tuple of tag names requested.
+        self.read_log = []
+        # One entry per write() call: the tuple of (tag, value) pairs.
+        self.write_calls = []
+
+    def add_instance(self, base_name, aoi_type, subtags):
+        """Seed one more AOI instance: base tag plus its member values.
+
+        ``subtags`` is a list of ``(subtag, type, value)``; each registers
+        a value, a type, and a member entry in ``tags`` (AOI data type,
+        as with the seed tags), alongside the base-instance entry.
+        """
+        self.tags[base_name] = {
+            "data_type_name": aoi_type,
+            "dim": 0,
+            "dimensions": [0, 0, 0],
+            "alias": False,
+        }
+        for subtag, type_, value in subtags:
+            name = base_name + subtag
+            self._values[name] = value
+            self._types[name] = type_
+            self.tags[name] = {
+                "data_type_name": aoi_type,
+                "dim": 0,
+                "dimensions": [0, 0, 0],
+                "alias": False,
+            }
 
     def open(self):
         self._open = True
@@ -144,6 +207,7 @@ class FakePLC:
     def read(self, *tag_names):
         """Read tags, mirroring pycomm3: one tag -> one FakeTag, many -> list."""
         self._require_open()
+        self.read_log.append(tuple(tag_names))
         results = []
         for name in tag_names:
             if name in self._values:
@@ -162,6 +226,7 @@ class FakePLC:
         an unknown tag yields value None and an error, so it is falsy.
         """
         self._require_open()
+        self.write_calls.append(tuple(tag_value_pairs))
         results = []
         for tag, value in tag_value_pairs:
             if tag in self._values:
@@ -175,6 +240,5 @@ class FakePLC:
         return results
 
     def reset(self):
-        """Restore seed values and clear the write log."""
-        self._values = {name: value for name, _type, value in _SEED_TAGS}
-        self.write_log.clear()
+        """Restore seed values, types, and tags; clear the call logs."""
+        self._reset_state()

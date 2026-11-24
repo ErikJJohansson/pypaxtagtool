@@ -15,7 +15,14 @@ dependencies = [
     "tqdm==4.70.1",
     "fastapi==0.165.0",
     "uvicorn==0.54.0",
+    "pydantic==2.14.4",
+    "pydantic-settings==2.16.3",
+    "pyyaml==6.0.2",
+    "httpx==0.28.1",
 ]
+
+[project.scripts]
+pypax-web = "pypax.web.app:main"
 
 [project.optional-dependencies]
 dev = [
