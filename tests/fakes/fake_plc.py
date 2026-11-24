@@ -7,11 +7,10 @@ its interface that ``pypax.py`` (and later the webapp core) relies on:
 - ``get_plc_name()``
 - ``tags`` — a dict of ``{name: {...}}`` with the keys the CLI reads:
   ``data_type_name``, ``dim``, ``dimensions``, ``alias``
-- ``read(*tag_names)`` — returns a list of ``FakeTag`` objects, indexable as
-  ``(name, value, data_type)`` like pycomm3's ``Tag``, where ``bool(tag)``
-  is True on success and False on failure, and ``tag.error`` holds the
-  failure reason (or ``None``)
-- ``write(*tag_value_pairs)`` — returns a list of bools, one per pair
+- ``read(*tag_names)`` / ``write(*tag_value_pairs)`` — return one
+  ``FakeTag`` when a single tag is requested and a list otherwise,
+  exactly like pycomm3's ``LogixDriver``; ``FakeTag`` is a 4-field
+  tuple ``(tag, value, type, error)`` like pycomm3's ``Tag``
 
 No network access, no real PLC, no pycomm3 import. Pure Python, so it runs
 identically on macOS, Windows, and Linux.
@@ -24,10 +23,13 @@ from __future__ import annotations
 
 
 class FakeTag:
-    """One tag read result, mimicking pycomm3's ``Tag``.
+    """One tag read/write result, mimicking pycomm3's ``Tag`` exactly.
 
-    Indexable as ``(name, value, data_type)``; truthy when the read
-    succeeded, falsy with ``error`` set when it did not.
+    pycomm3 1.2.16 (the pinned version) defines ``Tag`` as a NamedTuple
+    with fields ``(tag, value, type, error)`` — 4 fields, indexable and
+    unpackable as such. ``bool(tag)`` is True only when the value is not
+    None and there is no error. ``.error`` is both the 4th tuple field
+    and an attribute, exactly like the real thing.
     """
 
     __slots__ = ("tag", "value", "type", "error")
@@ -51,7 +53,7 @@ class FakeTag:
         return 4
 
     def __bool__(self):
-        return self.error is None
+        return self.value is not None and self.error is None
 
     def __repr__(self):
         return (
@@ -140,7 +142,7 @@ class FakePLC:
             raise RuntimeError("PLC connection is not open")
 
     def read(self, *tag_names):
-        """Read tags; returns a list of FakeTag, one per requested tag."""
+        """Read tags, mirroring pycomm3: one tag -> one FakeTag, many -> list."""
         self._require_open()
         results = []
         for name in tag_names:
@@ -148,19 +150,28 @@ class FakePLC:
                 results.append(FakeTag(name, self._values[name], self._types[name]))
             else:
                 results.append(FakeTag(name, None, None, error="Unknown tag"))
+        if len(results) == 1:
+            return results[0]
         return results
 
     def write(self, *tag_value_pairs):
-        """Write (tag, value) pairs; returns a list of bools, one per pair."""
+        """Write (tag, value) pairs, mirroring pycomm3.
+
+        Returns one FakeTag per pair (a single FakeTag when only one pair
+        was written). A written tag echoes the written value with no error;
+        an unknown tag yields value None and an error, so it is falsy.
+        """
         self._require_open()
         results = []
         for tag, value in tag_value_pairs:
             if tag in self._values:
                 self._values[tag] = value
                 self.write_log.append((tag, value))
-                results.append(True)
+                results.append(FakeTag(tag, value, self._types[tag]))
             else:
-                results.append(False)
+                results.append(FakeTag(tag, value, None, error="Unknown tag"))
+        if len(results) == 1:
+            return results[0]
         return results
 
     def reset(self):

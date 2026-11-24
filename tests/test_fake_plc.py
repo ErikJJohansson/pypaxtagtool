@@ -42,16 +42,40 @@ def test_read_known_tags_returns_values_types_and_truthy_results(plc):
 
 
 def test_read_result_is_indexable_like_pycomm3_tag(plc):
-    (result,) = plc.read("PIT_201.Cfg_HiLim")
+    result = plc.read("PIT_201.Cfg_HiLim")
     assert isinstance(result, FakeTag)
     assert result[0] == "PIT_201.Cfg_HiLim"
     assert result[1] == 8.0
     assert result[2] == "REAL"
-    assert tuple(result)[:3] == ("PIT_201.Cfg_HiLim", 8.0, "REAL")
+    assert result[3] is None
+    assert tuple(result) == ("PIT_201.Cfg_HiLim", 8.0, "REAL", None)
+    assert len(result) == 4
+    # pycomm3's Tag is a 4-field NamedTuple (tag, value, type, error);
+    # it unpacks as 4 fields, with .error as the 4th field and attribute.
+    tag, value, type_, error = result
+    assert (tag, value, type_, error) == ("PIT_201.Cfg_HiLim", 8.0, "REAL", None)
+    assert result.error is None
+
+
+def test_failed_read_result_is_4_fields_with_error(plc):
+    result = plc.read("NOPE_999.Cfg_HiLim")
+    assert len(result) == 4
+    assert tuple(result) == ("NOPE_999.Cfg_HiLim", None, None, "Unknown tag")
+    tag, value, type_, error = result
+    assert (tag, value, type_, error) == ("NOPE_999.Cfg_HiLim", None, None, "Unknown tag")
+    assert not result
+    assert result.error == "Unknown tag"
+
+
+def test_read_single_tag_returns_single_tag_not_list(plc):
+    result = plc.read("FIT_101.Cfg_HiLim")
+    assert isinstance(result, FakeTag)
+    assert not isinstance(result, list)
+    assert result.value == 90.0
 
 
 def test_read_unknown_tag_fails_cleanly(plc):
-    (result,) = plc.read("NOPE_999.Cfg_HiLim")
+    result = plc.read("NOPE_999.Cfg_HiLim")
     assert not result
     assert result.value is None
     assert result.error == "Unknown tag"
@@ -64,17 +88,22 @@ def test_read_mixed_known_and_unknown_tags(plc):
 
 
 def test_write_then_read_back(plc):
-    assert plc.write(("FIT_101.Cfg_HiLim", 42.5)) == [True]
-    (result,) = plc.read("FIT_101.Cfg_HiLim")
+    result = plc.write(("FIT_101.Cfg_HiLim", 42.5))
+    assert isinstance(result, FakeTag)
+    assert not isinstance(result, list)
+    assert result
     assert result.value == 42.5
+    assert plc.read("FIT_101.Cfg_HiLim").value == 42.5
 
 
-def test_write_multiple_pairs_returns_one_bool_each(plc):
-    assert plc.write(
+def test_write_multiple_pairs_returns_one_tag_each(plc):
+    results = plc.write(
         ("FIT_101.Cfg_HiLim", 42.5),
         ("FIT_101.Cfg_Desc", "Updated desc"),
         ("FIT_101.HiHi.Cfg_Exists", False),
-    ) == [True, True, True]
+    )
+    assert isinstance(results, list)
+    assert [bool(r) for r in results] == [True, True, True]
     values = [
         r.value
         for r in plc.read("FIT_101.Cfg_HiLim", "FIT_101.Cfg_Desc", "FIT_101.HiHi.Cfg_Exists")
@@ -82,10 +111,17 @@ def test_write_multiple_pairs_returns_one_bool_each(plc):
     assert values == [42.5, "Updated desc", False]
 
 
-def test_write_unknown_tag_returns_false_and_changes_nothing(plc):
-    assert plc.write(("NOPE_999.Cfg_HiLim", 1.0)) == [False]
-    (result,) = plc.read("FIT_101.Cfg_HiLim")
-    assert result.value == 90.0
+def test_write_single_pair_returns_single_tag_not_list(plc):
+    result = plc.write(("FIT_101.Cfg_HiLim", 42.5))
+    assert isinstance(result, FakeTag)
+    assert not isinstance(result, list)
+
+
+def test_write_unknown_tag_returns_falsy_tag_and_changes_nothing(plc):
+    result = plc.write(("NOPE_999.Cfg_HiLim", 1.0))
+    assert not result
+    assert result.error == "Unknown tag"
+    assert plc.read("FIT_101.Cfg_HiLim").value == 90.0
 
 
 def test_write_log_records_writes_in_order(plc):
@@ -129,8 +165,7 @@ def test_tags_dict_supports_aoi_discovery_by_data_type(plc):
 def test_reset_restores_seed_values_and_clears_write_log(plc):
     plc.write(("FIT_101.Cfg_HiLim", 42.5))
     plc.reset()
-    (result,) = plc.read("FIT_101.Cfg_HiLim")
-    assert result.value == 90.0
+    assert plc.read("FIT_101.Cfg_HiLim").value == 90.0
     assert plc.write_log == []
 
 

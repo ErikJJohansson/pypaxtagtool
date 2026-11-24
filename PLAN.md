@@ -81,7 +81,10 @@ Three layers, one source of truth each; real values never committed.
 ## 6. Phases (small commits, one chunk each)
 
 - Phase 0 — Scaffolding. Branch `feature/webapp`; pytest + GitHub Actions CI
-  (test matrix: macOS + Windows + Linux);
+  (test matrix: macOS + Windows + Linux). NOTE (2026-11-24): the Muse GitHub App
+  has no Workflows permission, so `.github/workflows/ci.yml` cannot be pushed via
+  the API — it lives in the local branch only, ignored for now; local pytest + ruff
+  are the gate until it is added manually on GitHub later.
   repo layout (`src/pypax/`); fake-PLC harness (in-memory `LogixDriver` stand-in
   with the same interface: tags, read, write, `get_plc_name`).
 - Phase 1 — Core refactor + unit tests first. Extract pure logic from `pypax.py`
