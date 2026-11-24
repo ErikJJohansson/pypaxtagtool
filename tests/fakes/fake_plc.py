@@ -113,6 +113,22 @@ def _data_type_name(tag_name):
     return "UNKNOWN"
 
 
+def _corrupt_value(value):
+    """Perturb a written value the way a PLC that ignored the write might.
+
+    Numbers shift by 1, bools flip, strings gain a suffix; anything else
+    is left alone (the caller then cannot distinguish, which is fine —
+    the hook is only meaningful for the scalar types PlantPAX uses).
+    """
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, (int, float)):
+        return value + 1
+    if isinstance(value, str):
+        return value + " (corrupted)"
+    return value
+
+
 # Base instances seeded by _SEED_TAGS, in discovery order. A real
 # LogixDriver.tags holds exactly these (base tag -> AOI type); the fake
 # additionally holds one entry per seeded member value below.
@@ -163,6 +179,17 @@ class FakePLC:
         self.read_log = []
         # One entry per write() call: the tuple of (tag, value) pairs.
         self.write_calls = []
+        # Test-only hook: tag names whose stored value is perturbed right
+        # after a successful write (the write itself still reports
+        # success), so a later read-back disagrees with what was written
+        # — the read-back verification's "mismatch" path. Simulates a PLC
+        # that did not actually apply the write (clamped, overwritten, or
+        # a stale cache). Cleared by reset().
+        self.corrupt_after_write = set()
+        # Test-only hook: tag names removed from the value store right
+        # after a successful write, so a later read-back fails outright
+        # (unknown tag, value None) — the "unreadable read-back" path.
+        self.drop_after_write = set()
 
     def add_instance(self, base_name, aoi_type, subtags):
         """Seed one more AOI instance: base tag plus its member values.
@@ -224,15 +251,23 @@ class FakePLC:
         Returns one FakeTag per pair (a single FakeTag when only one pair
         was written). A written tag echoes the written value with no error;
         an unknown tag yields value None and an error, so it is falsy.
+        Tags in ``corrupt_after_write`` report success but store a
+        perturbed value, so a later read disagrees with the write.
         """
         self._require_open()
         self.write_calls.append(tuple(tag_value_pairs))
         results = []
         for tag, value in tag_value_pairs:
             if tag in self._values:
+                type_ = self._types[tag]
                 self._values[tag] = value
                 self.write_log.append((tag, value))
-                results.append(FakeTag(tag, value, self._types[tag]))
+                if tag in self.corrupt_after_write:
+                    self._values[tag] = _corrupt_value(value)
+                if tag in self.drop_after_write:
+                    del self._values[tag]
+                    del self._types[tag]
+                results.append(FakeTag(tag, value, type_))
             else:
                 results.append(FakeTag(tag, value, None, error="Unknown tag"))
         if len(results) == 1:

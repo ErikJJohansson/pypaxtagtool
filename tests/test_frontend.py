@@ -206,8 +206,8 @@ def test_mock_server_contract_over_http():
 
         status, body = call("POST", "/api/write", {"plc_name": "MOCK_PLC"})
         assert status == 200
-        assert body["summary"] == {"written": 1, "failed": 0}
-        assert body["results"][0]["status"] == "written"
+        assert body["summary"] == {"verified": 1, "mismatch": 0, "failed": 0}
+        assert body["results"][0]["status"] == "verified"
 
         status, audit = call("GET", "/api/audit")
         assert status == 200 and len(audit) == 1

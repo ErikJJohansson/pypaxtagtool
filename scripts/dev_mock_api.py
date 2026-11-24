@@ -225,13 +225,16 @@ class MockState:
     def apply_write(self, plc_name: str) -> dict:
         """Apply staged changes to the mock PLC baseline (write = verified here)."""
         if plc_name != PLC_NAME:
-            return {"results": [], "summary": {"written": 0, "failed": len(self.staged)}}
+            return {
+                "results": [],
+                "summary": {"verified": 0, "mismatch": 0, "failed": len(self.staged)},
+            }
         results = []
         for entry in self.staged:
             for row in self.plc_data[entry["aoi"]]["rows"]:
                 if row["name"] == entry["instance"]:
                     row["values"][entry["subtag"]] = entry["new_value"]
-            results.append({"tag": entry["tag"], "status": "written"})
+            results.append({"tag": entry["tag"], "status": "verified"})
         import datetime
 
         self.audit.append(
@@ -239,12 +242,16 @@ class MockState:
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "plc_name": PLC_NAME,
                 "action": "write",
-                "written": len(results),
+                "verified": len(results),
+                "mismatch": 0,
                 "failed": 0,
             }
         )
         self.staged = []
-        return {"results": results, "summary": {"written": len(results), "failed": 0}}
+        return {
+            "results": results,
+            "summary": {"verified": len(results), "mismatch": 0, "failed": 0},
+        }
 
 
 STATE = MockState()

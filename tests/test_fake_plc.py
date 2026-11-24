@@ -210,6 +210,39 @@ def test_add_instance_seeds_base_and_member_tags(plc):
     assert plc.read("TT_999.Cfg_HiLim").value == 50.0
 
 
+def test_corrupt_after_write_reports_success_but_read_disagrees(plc):
+    plc.corrupt_after_write = {"FIT_101.Cfg_HiLim", "FIT_101.Cfg_Desc"}
+    assert plc.write(("FIT_101.Cfg_HiLim", 95.0))  # write reports success
+    assert plc.write(("FIT_101.Cfg_Desc", "New desc"))
+    # ... but the stored values were perturbed, so a read-back disagrees.
+    assert plc.read("FIT_101.Cfg_HiLim").value == 96.0
+    assert plc.read("FIT_101.Cfg_Desc").value == "New desc (corrupted)"
+    # Tags outside the hook are untouched.
+    assert plc.read("PIT_201.Cfg_HiLim").value == 8.0
+    plc.write(("PIT_201.Cfg_HiLim", 9.0))
+    assert plc.read("PIT_201.Cfg_HiLim").value == 9.0
+
+
+def test_corrupt_after_write_is_cleared_by_reset(plc):
+    plc.corrupt_after_write = {"FIT_101.Cfg_HiLim"}
+    plc.reset()
+    assert plc.corrupt_after_write == set()
+    plc.write(("FIT_101.Cfg_HiLim", 95.0))
+    assert plc.read("FIT_101.Cfg_HiLim").value == 95.0
+
+
+def test_drop_after_write_reports_success_but_read_fails(plc):
+    plc.drop_after_write = {"FIT_101.Cfg_HiLim"}
+    assert plc.write(("FIT_101.Cfg_HiLim", 95.0))  # write reports success
+    result = plc.read("FIT_101.Cfg_HiLim")
+    assert result.value is None
+    assert result.error == "Unknown tag"
+    assert not result
+    plc.reset()
+    assert plc.drop_after_write == set()
+    assert plc.read("FIT_101.Cfg_HiLim").value == 90.0
+
+
 def test_reset_clears_call_logs_and_added_instances(plc):
     plc.add_instance("TT_999", "P_AIn", [(".Cfg_HiLim", "REAL", 50.0)])
     plc.read("FIT_101.Cfg_HiLim")

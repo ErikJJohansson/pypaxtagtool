@@ -277,23 +277,24 @@ const MockApi = {
   },
   async write(plcName) {
     if (plcName !== MOCK_DATA.plcName) {
-      return { results: [], summary: { written: 0, failed: this._staged.length } };
+      return { results: [], summary: { verified: 0, mismatch: 0, failed: this._staged.length } };
     }
     const results = this._staged.map((s) => {
       const data = MOCK_DATA.plcData[s.aoi];
       const row = data.rows.find((r) => r.name === s.instance);
       if (row) row.values[s.subtag] = s.new_value;
-      return { tag: s.tag, status: 'written' };
+      return { tag: s.tag, status: 'verified' };
     });
     this._audit.push({
       timestamp: new Date().toISOString(),
       plc_name: MOCK_DATA.plcName,
       action: 'write',
-      written: results.length,
+      verified: results.length,
+      mismatch: 0,
       failed: 0,
     });
     this._staged = [];
-    return { results, summary: { written: results.length, failed: 0 } };
+    return { results, summary: { verified: results.length, mismatch: 0, failed: 0 } };
   },
   async getAudit() {
     return JSON.parse(JSON.stringify(this._audit));

@@ -1,6 +1,42 @@
 """Tests for pypax.diff."""
 
-from pypax.diff import row_differences
+from pypax.diff import READBACK_ABSOLUTE_TOLERANCE, row_differences, values_equal
+
+
+def test_near_zero_real_is_a_difference_by_default():
+    # No absolute tolerance by default: 0.0000001 vs 0.0 is a real edit.
+    assert values_equal(0.0000001, 0.0) is False
+    assert row_differences([("A.Cfg_HiLim", 0.0000001)], [("A.Cfg_HiLim", 0.0)]) == [
+        ("A.Cfg_HiLim", 0.0000001)
+    ]
+
+
+def test_absolute_tolerance_forgives_near_zero_read_back():
+    # The read-back check passes an absolute tolerance: a denormal-scale
+    # residue after writing 0.0 still verifies.
+    assert values_equal(0.0000001, 0.0, absolute_tolerance=READBACK_ABSOLUTE_TOLERANCE) is True
+    assert values_equal(0.0001, 0.0, absolute_tolerance=READBACK_ABSOLUTE_TOLERANCE) is False
+    assert values_equal(-0.0000001, 0.0, absolute_tolerance=READBACK_ABSOLUTE_TOLERANCE) is True
+    assert (
+        row_differences(
+            [("A.Cfg_HiLim", 0.0000001)],
+            [("A.Cfg_HiLim", 0.0)],
+            absolute_tolerance=READBACK_ABSOLUTE_TOLERANCE,
+        )
+        == []
+    )
+    assert row_differences(
+        [("A.Cfg_HiLim", 0.0001)],
+        [("A.Cfg_HiLim", 0.0)],
+        absolute_tolerance=READBACK_ABSOLUTE_TOLERANCE,
+    ) == [("A.Cfg_HiLim", 0.0001)]
+
+
+def test_absolute_tolerance_does_not_change_other_types():
+    # Absolute tolerance only applies to floats; INT/STRING stay exact.
+    assert values_equal(1, 0, absolute_tolerance=1e-6) is False
+    assert values_equal("a", "b", absolute_tolerance=1e-6) is False
+    assert values_equal(None, 0.0, absolute_tolerance=1e-6) is False
 
 
 def test_no_differences_when_rows_match():

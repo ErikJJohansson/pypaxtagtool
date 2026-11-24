@@ -34,8 +34,12 @@ def workbook(tmp_path):
 
 
 @pytest.fixture()
-def app(workbook):
-    return create_app(plc_factory=lambda commpath: FakePLC(commpath), template_path=str(workbook))
+def app(workbook, tmp_path):
+    return create_app(
+        plc_factory=lambda commpath: FakePLC(commpath),
+        template_path=str(workbook),
+        audit_dir=str(tmp_path / "audit"),
+    )
 
 
 @pytest.fixture()
@@ -289,10 +293,10 @@ def test_write_happy_path(connected, app):
     response = connected.post("/api/write", json={"plc_name": PLC_NAME})
     body = response.json()
     assert response.status_code == 200
-    assert body["summary"] == {"written": 2, "failed": 0}
+    assert body["summary"] == {"verified": 2, "mismatch": 0, "failed": 0}
     assert body["results"] == [
-        {"tag": "FIT_101.Cfg_Desc", "status": "written"},
-        {"tag": "FIT_101.Cfg_HiLim", "status": "written"},
+        {"tag": "FIT_101.Cfg_Desc", "status": "verified"},
+        {"tag": "FIT_101.Cfg_HiLim", "status": "verified"},
     ]
     # Baseline updated and staged cleared; PLC really changed.
     assert connected.get("/api/changes").json() == []
@@ -300,12 +304,12 @@ def test_write_happy_path(connected, app):
     assert rows[0]["values"][".Cfg_Desc"] == "New desc"
     assert rows[0]["values"][".Cfg_HiLim"] == 95
     audit = connected.get("/api/audit").json()
-    assert len(audit) == 1
-    assert audit[0]["action"] == "write"
-    assert audit[0]["plc_name"] == PLC_NAME
-    assert audit[0]["tags"] == 2
-    assert audit[0]["results"] == {"written": 2, "failed": 0}
-    assert audit[0]["timestamp"]
+    writes = [entry for entry in audit if entry["action"] == "write"]
+    assert len(writes) == 1
+    assert writes[0]["plc_name"] == PLC_NAME
+    assert writes[0]["tags"] == 2
+    assert writes[0]["results"] == {"verified": 2, "mismatch": 0, "failed": 0}
+    assert writes[0]["timestamp"]
     assert isinstance(app.state.pypax.plc, FakePLC)
     assert ("FIT_101.Cfg_Desc", "New desc") in app.state.pypax.plc.write_log
 
@@ -317,10 +321,12 @@ def test_write_wrong_plc_name_refused(connected):
     assert "mismatch" in response.json()["detail"]
     # Nothing staged was written and the staged changes are still there.
     assert len(connected.get("/api/changes").json()) == 2
-    assert connected.get("/api/audit").json() == []
+    # A refused write records no write entry (only the connect entry).
+    writes = [e for e in connected.get("/api/audit").json() if e["action"] == "write"]
+    assert writes == []
 
 
-def test_write_with_profile_expected_name_mismatch(workbook):
+def test_write_with_profile_expected_name_mismatch(workbook, tmp_path):
     profiles = {
         "prod": PlcProfile(
             name="prod",
@@ -333,6 +339,7 @@ def test_write_with_profile_expected_name_mismatch(workbook):
         plc_factory=lambda commpath: FakePLC(commpath),
         template_path=str(workbook),
         profiles=profiles,
+        audit_dir=str(tmp_path / "audit"),
     )
     client = TestClient(app)
     # Connect still works even though the PLC name is not the expected one.
@@ -352,8 +359,9 @@ def test_write_with_profile_expected_name_mismatch(workbook):
 
 def test_write_nothing_staged(connected):
     body = connected.post("/api/write", json={"plc_name": PLC_NAME}).json()
-    assert body == {"results": [], "summary": {"written": 0, "failed": 0}}
-    assert connected.get("/api/audit").json() == []
+    assert body == {"results": [], "summary": {"verified": 0, "mismatch": 0, "failed": 0}}
+    writes = [e for e in connected.get("/api/audit").json() if e["action"] == "write"]
+    assert writes == []
 
 
 def test_write_failed_tag_stays_staged(connected, app):
@@ -362,15 +370,17 @@ def test_write_failed_tag_stays_staged(connected, app):
     # after staging, so the re-read sees it missing and the write fails.
     app.state.pypax.plc._values.pop("FIT_101.Cfg_HiLim")
     body = connected.post("/api/write", json={"plc_name": PLC_NAME}).json()
-    assert body["summary"] == {"written": 1, "failed": 1}
+    assert body["summary"] == {"verified": 1, "mismatch": 0, "failed": 1}
     assert body["results"] == [
-        {"tag": "FIT_101.Cfg_Desc", "status": "written"},
+        {"tag": "FIT_101.Cfg_Desc", "status": "verified"},
         {"tag": "FIT_101.Cfg_HiLim", "status": "failed"},
     ]
     # The failed change stays staged; the written one is gone.
     assert [c["tag"] for c in connected.get("/api/changes").json()] == ["FIT_101.Cfg_HiLim"]
-    assert connected.get("/api/audit").json()[0]["results"] == {
-        "written": 1,
+    writes = [e for e in connected.get("/api/audit").json() if e["action"] == "write"]
+    assert writes[0]["results"] == {
+        "verified": 1,
+        "mismatch": 0,
         "failed": 1,
     }
 
@@ -385,6 +395,7 @@ def test_missing_template_returns_503(tmp_path):
     app = create_app(
         plc_factory=lambda commpath: FakePLC(commpath),
         template_path=str(tmp_path / "nope.xlsx"),
+        audit_dir=str(tmp_path / "audit"),
     )
     client = TestClient(app)
     client.post("/api/connect", json={"commpath": "10.0.0.1/0"})

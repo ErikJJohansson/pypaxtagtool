@@ -25,8 +25,8 @@ from pydantic import BaseModel
 from pycomm3 import LogixDriver
 
 from ..config import AppSettings, load_app_config
-from ..diff import row_differences
-from ..plc import make_tag_list, read_plc_row, write_plc_row
+from ..diff import READBACK_ABSOLUTE_TOLERANCE, row_differences, values_equal
+from ..plc import MAX_TAGS_PER_READ, make_tag_list, read_plc_row, write_plc_row
 from .aoi_model import discover_instances, load_template_model, read_aoi_rows
 from .paste import parse_tsv
 from .state import AppState
@@ -120,7 +120,29 @@ def _ensure_baseline(state: AppState, aoi: str) -> None:
         raise HTTPException(status_code=502, detail=f"failed to read {aoi} from PLC: {exc}")
 
 
-def create_app(plc_factory=None, template_path=None, settings=None, profiles=None):
+def _read_back_values(plc, tags):
+    """Chunked read-back of written tags: ``{tag: formatted value}``.
+
+    Reads in chunks of at most ``MAX_TAGS_PER_READ`` so no request
+    exceeds the CIP packet limit. A tag whose read fails (or whose whole
+    chunk raises) maps to ``None`` — the caller treats that as an
+    unverified read-back, never as a crash.
+    """
+    values = {}
+    for start in range(0, len(tags), MAX_TAGS_PER_READ):
+        chunk = tags[start : start + MAX_TAGS_PER_READ]
+        try:
+            formatted, _raw = read_plc_row(plc, chunk)
+        except Exception:
+            for tag in chunk:
+                values[tag] = None
+            continue
+        for tag, value in formatted:
+            values[tag] = value
+    return values
+
+
+def create_app(plc_factory=None, template_path=None, settings=None, profiles=None, audit_dir=None):
     """Build the FastAPI app. Tests inject a fake PLC via ``plc_factory``."""
     settings = settings or AppSettings()
     profiles = profiles or {}
@@ -129,6 +151,7 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
         template_path=_resolve_template_path(settings, template_path),
         settings=settings,
         profiles=profiles,
+        audit_dir=audit_dir,
     )
     app = FastAPI(title="PyPaxTagTool")
     app.state.pypax = state  # tests and tooling inspect the live state here
@@ -160,6 +183,15 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
                     plc.close()
                 except Exception:
                     pass
+                state.audit.record(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "plc_name": None,
+                        "action": "connect",
+                        "tags": 0,
+                        "results": {"connected": False, "error": str(exc)},
+                    }
+                )
                 return {
                     "connected": False,
                     "plc_name": None,
@@ -170,17 +202,38 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
             state.commpath = body.commpath
             state.plc_name = plc_name
             state.profile = profile
+            state.audit.record(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "plc_name": plc_name,
+                    "action": "connect",
+                    "tags": 0,
+                    "results": {"connected": True},
+                }
+            )
             return {"connected": True, "plc_name": plc_name, "commpath": body.commpath}
 
     @app.post("/api/disconnect")
     def disconnect():
         with state.lock:
+            was_connected = state.connected
+            plc_name = state.plc_name
             if state.connected:
                 try:
                     state.plc.close()
                 except Exception:
                     pass
             state.reset_connection()
+            if was_connected:
+                state.audit.record(
+                    {
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "plc_name": plc_name,
+                        "action": "disconnect",
+                        "tags": 0,
+                        "results": {"connected": False},
+                    }
+                )
             return {"connected": False}
 
     @app.get("/api/plc")
@@ -267,6 +320,14 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
     def list_changes():
         return list(state.staged.values())
 
+    @app.delete("/api/changes")
+    def discard_changes():
+        """Discard all staged changes. The PLC baseline is untouched."""
+        with state.lock:
+            discarded = len(state.staged)
+            state.staged.clear()
+            return {"discarded": discarded}
+
     @app.post("/api/write")
     def write(body: WriteRequest):
         with state.lock:
@@ -297,10 +358,12 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
                     ),
                 )
             if not state.staged:
-                return {"results": [], "summary": {"written": 0, "failed": 0}}
+                return {"results": [], "summary": {"verified": 0, "mismatch": 0, "failed": 0}}
 
             # Re-read the affected rows and diff with the core library, so
-            # only real differences are written (and only staged ones).
+            # only real differences are written (and only staged ones). A
+            # staged tag absent from the diffs is already at the staged
+            # value in the PLC, so it verifies without a write.
             diffs: list[tuple[str, object]] = []
             by_instance: dict[tuple[str, str], list[tuple[str, str]]] = {}
             for key in state.staged:
@@ -328,33 +391,80 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
                     status_code=502, detail=f"failed to re-read PLC before write: {exc}"
                 )
 
+            staged_by_tag = {change["tag"]: change for change in state.staged.values()}
+            intended = dict(diffs)
+            status: dict[str, str] = {}
+            # Staged tags the PLC already holds at the staged value verify
+            # at once — no write needed (and no write to fail).
+            for tag in staged_by_tag:
+                if tag not in intended:
+                    status[tag] = "verified"
+
             # Chunked sequential writes, one PLC at a time (lock is held).
-            results: list[dict] = []
             chunk_size = max(1, state.settings.write_chunk_size)
             try:
                 for start in range(0, len(diffs), chunk_size):
                     chunk = diffs[start : start + chunk_size]
                     chunk_results = write_plc_row(state.plc, chunk)
                     for (tag, _value), ok in zip(chunk, chunk_results):
-                        results.append({"tag": tag, "status": "written" if ok else "failed"})
+                        if not ok:
+                            status[tag] = "failed"
             except Exception as exc:
                 raise HTTPException(status_code=502, detail=f"failed to write to PLC: {exc}")
 
-            written_tags = {r["tag"] for r in results if r["status"] == "written"}
+            # Read-back verification: re-read every successfully written
+            # tag and compare with what was intended. A mismatch (or an
+            # unreadable read-back) is re-read up to read_back_retries
+            # times before it is declared a mismatch — a transient read
+            # glitch must not condemn a good write.
+            written_tags = [tag for tag in intended if tag not in status]
+            if written_tags:
+                read_back = _read_back_values(state.plc, written_tags)
+                pending = [
+                    tag
+                    for tag in written_tags
+                    if not values_equal(
+                        intended[tag],
+                        read_back.get(tag),
+                        state.settings.real_tolerance,
+                        READBACK_ABSOLUTE_TOLERANCE,
+                    )
+                ]
+                for _attempt in range(max(0, state.settings.read_back_retries)):
+                    if not pending:
+                        break
+                    retry = _read_back_values(state.plc, pending)
+                    pending = [
+                        tag
+                        for tag in pending
+                        if not values_equal(
+                            intended[tag],
+                            retry.get(tag),
+                            state.settings.real_tolerance,
+                            READBACK_ABSOLUTE_TOLERANCE,
+                        )
+                    ]
+                for tag in written_tags:
+                    status[tag] = "mismatch" if tag in pending else "verified"
+
+            # Results in staged order: the changes as the user staged them.
+            results = [{"tag": tag, "status": status[tag]} for tag in staged_by_tag]
+            verified_tags = {tag for tag, s in status.items() if s == "verified"}
             for key in list(state.staged):
-                if state.staged[key]["tag"] in written_tags:
+                if state.staged[key]["tag"] in verified_tags:
                     change = state.staged.pop(key)
                     state.baseline[key[0]][key[1]][key[2]] = change["new_value"]
             summary = {
-                "written": sum(1 for r in results if r["status"] == "written"),
+                "verified": sum(1 for r in results if r["status"] == "verified"),
+                "mismatch": sum(1 for r in results if r["status"] == "mismatch"),
                 "failed": sum(1 for r in results if r["status"] == "failed"),
             }
-            state.audit.append(
+            state.audit.record(
                 {
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "plc_name": state.plc_name,
                     "action": "write",
-                    "tags": len(diffs),
+                    "tags": len(results),
                     "results": summary,
                 }
             )
@@ -362,7 +472,7 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
 
     @app.get("/api/audit")
     def audit():
-        return list(state.audit)
+        return state.audit.list()
 
     @app.get("/api/export")
     def export():
