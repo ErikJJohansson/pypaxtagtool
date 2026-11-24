@@ -148,17 +148,9 @@ in Studio 5000, check the audit log for what was actually sent, and see
 Writes are also protected by a single-connection lock: one PLC connection
 at a time, no parallel writes to the same PLC.
 
-## Export to spreadsheet (available once Phase 6 lands)
+## Export to spreadsheet
 
-> **Status: not yet available.** The Export button is disabled and
-> `GET /api/export` returns `501` until the Phase 6 work lands. This
-> section describes the agreed behaviour, not the current build.
-
-Once Phase 6 lands, **Export .xlsx** downloads `<plc_name>_ConfigTags.xlsx`
-in the exact template layout (headers rows 4–9, instances from row 10,
-Setup sheet counts), with baseline values from the PLC and staged changes
-applied on top, highlighted amber. The exported file works with the legacy
-CLI below and vice versa — that round-trip is the point.
+**Export .xlsx** downloads `<plc_name>_ConfigTags.xlsx` in the exact template layout (headers rows 4–9, instances from row 10, Setup sheet counts), with baseline values from the PLC and staged changes applied on top, highlighted amber. The exported file works with the legacy CLI below and vice versa — that round-trip is the point. When disconnected, the template is exported as-is under the fallback name `PyPax_ConfigTags.xlsx`.
 
 ## The legacy CLI
 
@@ -259,7 +251,6 @@ PYPAX_CONFIG_FILE=config.toml PYPAX_PORT=8001 pypax-web
 - **No live PLC has been tested against yet.** Everything is fake-PLC
   tested. First live contact must follow `docs/SMOKE_TEST.md`
   (read-only first, then one harmless single-tag write).
-- **Export is pending** (Phase 6) — see above.
 - **`P_ValveMO` spelling discrepancy:** the template sheet has
   `.Cfg_CoastToLS` at position 10 while `AOI_definitions.py` has
   `.Cfg_CoastTolS`. Recorded as a known exception in the audit test;

@@ -3,8 +3,8 @@
 Covers: vendored AG Grid files exist and are local (no CDN), the SPA files
 exist, the JS only calls the frozen REST contract endpoints, the mock data
 shapes match the contract, the write modal requires typing the PLC name,
-the Export button stays disabled until Phase 6, and the dev mock server
-answers the contract end to end over real HTTP.
+the Export button is enabled and wired to /api/export, and the dev mock
+server answers the contract end to end over real HTTP.
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ ALLOWED_API_PATHS = {
     "/api/changes",
     "/api/write",
     "/api/audit",
+    "/api/export",
 }
 
 CDN_MARKERS = ("https://", "http://", "cdn.jsdelivr.net", "unpkg.com", "cdnjs")
@@ -102,12 +103,17 @@ def test_js_uses_ag_grid_create_grid():
     assert "cell-rejected" in js
 
 
-def test_export_button_disabled_until_phase_6():
+def test_export_button_enabled_and_wired():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
     export = re.search(r'<button[^>]*id="export-btn"[^>]*>', html)
     assert export is not None
-    assert "disabled" in export.group(0)
-    assert "Phase 6" in html
+    assert "disabled" not in export.group(0)
+    assert "Export .xlsx" in html
+    assert "coming in Phase 6" not in html
+    assert "exportSpreadsheet" in js
+    assert "fetch('/api/export')" in js
+    assert "Content-Disposition" in js
 
 
 def test_write_modal_requires_typing_plc_name():

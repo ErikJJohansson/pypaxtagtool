@@ -2,7 +2,7 @@
 
 Implements the frozen REST contract (see the Phase 3 brief): connect,
 PLC status, AOI list/read, TSV paste, staged changes, guarded writes,
-audit log, and a not-yet-implemented export. All state lives in one
+audit log, and spreadsheet export. All state lives in one
 :class:`AppState` guarded by a lock; one PLC connection at a time.
 
 The backend reads through the same ``pypax`` core library as the CLI:
@@ -16,16 +16,18 @@ tracebacks never leak.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pycomm3 import LogixDriver
 
 from ..config import AppSettings, load_app_config
 from ..diff import READBACK_ABSOLUTE_TOLERANCE, row_differences, values_equal
+from ..export import build_export_workbook
 from ..plc import MAX_TAGS_PER_READ, make_tag_list, read_plc_row, write_plc_row
 from .aoi_model import discover_instances, load_template_model, read_aoi_rows
 from .paste import parse_tsv
@@ -63,6 +65,16 @@ class WriteRequest(BaseModel):
 def default_plc_factory(commpath):
     """Build a real pycomm3 driver for a comm path."""
     return LogixDriver(commpath, init_tags=True, init_program_tags=True)
+
+
+def _export_filename(plc_name):
+    """``<plc_name>_ConfigTags.xlsx`` — the CLI write mode requires the
+    PLC name in the file name. Anything outside ``[A-Za-z0-9._-]`` is
+    replaced so the name is safe in a download header; ``None`` (not
+    connected) falls back to ``PyPax_ConfigTags.xlsx``."""
+    base = plc_name or "PyPax"
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in base)
+    return f"{safe}_ConfigTags.xlsx"
 
 
 def _resolve_template_path(settings: AppSettings, template_path):
@@ -476,7 +488,38 @@ def create_app(plc_factory=None, template_path=None, settings=None, profiles=Non
 
     @app.get("/api/export")
     def export():
-        raise HTTPException(status_code=501, detail="not implemented yet")
+        """Download the current snapshot as ``.xlsx`` in template layout.
+
+        Baseline values for every AOI plus staged changes on top (amber
+        fill). The file name carries the PLC name — the CLI write mode
+        refuses a file whose name does not contain it. When disconnected
+        there is no baseline, so the template is exported as-is under
+        the fallback name.
+        """
+        with state.lock:
+            model = _ensure_model(state)
+            if state.connected:
+                for aoi in model:
+                    _ensure_baseline(state, aoi)
+            book = build_export_workbook(
+                state.template_path,
+                state.baseline,
+                list(state.staged.values()),
+                state.plc_name,
+            )
+            buf = BytesIO()
+            book.save(buf)
+            book.close()
+            buf.seek(0)
+            return StreamingResponse(
+                buf,
+                media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                headers={
+                    "Content-Disposition": (
+                        f'attachment; filename="{_export_filename(state.plc_name)}"'
+                    )
+                },
+            )
 
     static_dir = Path(__file__).resolve().parent / "static"
     if static_dir.is_dir():

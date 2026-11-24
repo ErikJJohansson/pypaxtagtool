@@ -12,7 +12,7 @@
  *   GET  /api/changes
  *   POST /api/write         {plc_name}
  *   GET  /api/audit
- *   GET  /api/export        (501 until Phase 6; button stays disabled)
+ *   GET  /api/export        (.xlsx download of baseline + staged)
  *
  * CONTRACT CLARIFICATION (for the integrator to arbitrate with the backend):
  * the paste endpoint needs an anchor — the instance and subtag the pasted
@@ -770,6 +770,51 @@ async function refreshAudit() {
   }
 }
 
+/* Download the filename from a Content-Disposition header, if any. */
+function filenameFromDisposition(header) {
+  if (!header) return null;
+  const match = /filename="([^"]+)"/.exec(header);
+  return match ? match[1] : null;
+}
+
+/* Export: fetch the spreadsheet from the backend and trigger a
+ * browser download. The backend serves baseline values plus staged
+ * changes (amber) as <plc_name>_ConfigTags.xlsx. */
+async function exportSpreadsheet() {
+  showStatus('Exporting spreadsheet…');
+  let response;
+  try {
+    response = await fetch('/api/export');
+  } catch (err) {
+    showStatus('Export failed: backend not reachable.');
+    return;
+  }
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      if (body && body.detail) detail = body.detail;
+    } catch (err) {
+      /* keep the status text */
+    }
+    showStatus('Export failed: ' + detail);
+    return;
+  }
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(
+    response.headers.get('Content-Disposition'),
+  ) || 'PyPax_ConfigTags.xlsx';
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  showStatus('Spreadsheet exported: ' + filename);
+}
+
 /* ------------------------------------------------------------------ */
 /* Wiring + init                                                       */
 /* ------------------------------------------------------------------ */
@@ -799,9 +844,7 @@ function init() {
     showStatus('Discarded ' + discarded + ' staged change(s).');
   });
   $('write-btn').addEventListener('click', openWriteModal);
-  $('export-btn').addEventListener('click', () => {
-    showStatus('Export to spreadsheet is coming in Phase 6.');
-  });
+  $('export-btn').addEventListener('click', exportSpreadsheet);
   $('modal-cancel-btn').addEventListener('click', () => {
     $('write-modal').hidden = true;
   });

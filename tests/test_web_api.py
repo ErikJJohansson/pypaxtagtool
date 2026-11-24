@@ -385,12 +385,6 @@ def test_write_failed_tag_stays_staged(connected, app):
     }
 
 
-def test_export_not_implemented(connected):
-    response = connected.get("/api/export")
-    assert response.status_code == 501
-    assert response.json() == {"detail": "not implemented yet"}
-
-
 def test_missing_template_returns_503(tmp_path):
     app = create_app(
         plc_factory=lambda commpath: FakePLC(commpath),
