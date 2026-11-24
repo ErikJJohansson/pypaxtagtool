@@ -309,8 +309,10 @@ def main():
 
     print('Opening ' + excelfile)
     try:
-        book = openpyxl.load_workbook(excelfile,keep_vba=False,keep_links=True)
-
+        if mode == 'write':
+            book = openpyxl.load_workbook(excelfile,keep_vba=False,data_only=True,read_only=True)
+        elif mode == 'read':
+            book = openpyxl.load_workbook(excelfile,keep_vba=False)
     except:
         print('Unable to open excel file ' + excelfile)
         plc.close()
