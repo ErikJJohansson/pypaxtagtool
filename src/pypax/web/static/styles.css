@@ -14,6 +14,11 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute must win over any class that sets `display`
+   (e.g. .modal-overlay's `display: flex`), or hidden panels and modals
+   render visible on load and block the page. */
+[hidden] { display: none !important; }
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   margin: 0;

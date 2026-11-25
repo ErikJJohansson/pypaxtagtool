@@ -269,6 +269,25 @@ def test_write_modal_requires_typing_plc_name():
     assert "state.plcName" in js
 
 
+def test_hidden_attribute_wins_over_display_rules():
+    """Regression: a `[hidden]` element must actually be invisible.
+
+    `.modal-overlay` sets `display: flex`, which beats the browser's own
+    `[hidden] { display: none }` rule, so without a guard in our stylesheet
+    every modal (write/import/remove) rendered visible on load and the
+    overlay intercepted all clicks — the app was unusable until this guard.
+    """
+    css = (STATIC / "styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\[hidden\]\s*\{[^}]*display:\s*none", css), (
+        "styles.css needs a [hidden] { display: none } guard; "
+        "author display rules (e.g. .modal-overlay flex) override the "
+        "browser's built-in hidden handling"
+    )
+    # The guard exists because this class sets display; if the class ever
+    # stops setting display, the guard is still harmless — keep both.
+    assert "display: flex" in css
+
+
 def test_mock_data_shapes_match_contract():
     mock = _load_dev_mock_api()
     for aoi in mock.AOIS:
