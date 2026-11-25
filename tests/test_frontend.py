@@ -288,6 +288,18 @@ def test_hidden_attribute_wins_over_display_rules():
     assert "display: flex" in css
 
 
+def test_header_branding_logo_and_title():
+    """Header carries the PlantPAx logo and the full product title."""
+    logo = STATIC / "plantpax-logo.png"
+    assert logo.is_file(), "plantpax-logo.png must be vendored with the frontend"
+    assert logo.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n", "logo must be a PNG"
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert 'src="plantpax-logo.png"' in html
+    assert 'alt="PlantPAx Distributed Control System logo"' in html
+    assert "<h1>Python PlantPAx Configuration Tool</h1>" in html
+    assert "<title>Python PlantPAx Configuration Tool" in html
+
+
 def test_mock_data_shapes_match_contract():
     mock = _load_dev_mock_api()
     for aoi in mock.AOIS:
